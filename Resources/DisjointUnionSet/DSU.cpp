@@ -4,7 +4,7 @@
 using namespace std; 
 /*
  * Size is used as huristic because it helps to track number of nodes in the component
- * Traditional rank Based huristic don't gives this information, It gives the height of which might change after path compression.
+ * Traditional rank Based huristic don't gives this information, It gives the height of tree which might change after path compression.
  * */
 class DSU_FULL {
     int N_ ; 
@@ -104,7 +104,7 @@ public:
         int ult_u = DSU_find(u);  
         int ult_v = DSU_find(v); 
 
-        if( ult_u == ult_v) return ; // same parent skip the readdition. 
+        if( ult_u == ult_v) return ; // same Parent skip the readdition. 
 
         if( size_[ult_u] < size_[ult_v]){
             parent_[ult_u] = ult_v ; 
@@ -123,6 +123,62 @@ public:
     int DSU_sizeOfComp( int u ){
         int ult_u = DSU_find(u); 
         return size_[ult_u]; 
+    }
+
+}; 
+
+class DSU_SPLIT{
+    int N_; 
+    vector<int> parent_, size_ ; 
+public: 
+    DSU_SPLIT( int N ){
+        N_ = N ; 
+        parent_.resize(N+1, 0); 
+        size_.resize(N+1,1); 
+        for( int i = 0 ; i <= N ; i++ ){
+            parent_[i] = i; 
+        }
+
+    }
+
+    /*
+        In the split path compression every node on path gets updated but they don't attach directly to the root.
+        they are attached one level below the root 
+    */
+
+    int DSU_find( int u){
+        while( parent_[u] != u ){
+            int next = parent_.at(u); 
+            parent_.at(u) =  parent_.at(parent_.at(u)); // point to grandparent 
+            u = next; // move to orginal parent 
+        }
+        return u; 
+    }
+    
+    void DSU_union( int u , int v){
+        int ult_u = DSU_find(u); 
+        int ult_v = DSU_find(v); 
+
+        if( ult_u == ult_v){ 
+            return ; 
+        }
+
+        if( size_[ult_u] < size_[ult_v]){
+            parent_[ult_u] = ult_v; 
+            size_[ult_v] += size_[ult_u]; 
+        }else{
+            parent_[ult_v] = ult_u; 
+            size_[ult_u] += size_[ult_v]; 
+        }
+
+    }
+
+    bool DSU_isInSameComp( int u, int v){
+        return DSU_find(u) == DSU_find(v); 
+    }
+
+    int DSU_sizeOfComp( int u ){
+        return size_.at( DSU_find(u)); 
     }
 
 }; 
@@ -236,6 +292,8 @@ void test_file(string file_name) {
         process_commands<DSU_FULL>(file, N);
     } else if (DSU_varient == 2) {
         process_commands<DSU_HALF>(file, N);
+    } else if (DSU_varient == 3) {
+        process_commands<DSU_SPLIT>(file, N);
     } else {
         cout << "Invalid DSU variant\n";
     }
@@ -244,6 +302,8 @@ void test_file(string file_name) {
 void arg_usage(){
     cout << "Run program like ./executable <DSU_VERSION> <N>"; 
     cout << " 1 =>  DSU_FULL"; 
+    cout << " 2 =>  DSU_HALF"; 
+    cout << " 3 =>  DSU_SPLIT"; 
 }
 
 
@@ -262,6 +322,11 @@ int main( int argc, char * argv[] ) {
         int N = stoi(argv[2]); 
         cout << "Creating DSU  with size:  " << N << "\n"; 
         DSU_HALF ds(N); 
+        test_DSU( ds ); 
+    }else if(string(argv[1]) == "3"){
+        int N = stoi(argv[2]); 
+        cout << "Creating DSU  with size:  " << N << "\n"; 
+        DSU_SPLIT ds(N); 
         test_DSU( ds ); 
     }else if(string(argv[1]) == "-f"){
         string file_name = string(argv[2]); 

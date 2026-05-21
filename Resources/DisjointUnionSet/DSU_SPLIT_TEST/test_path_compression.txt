@@ -1,4 +1,4 @@
-2 7
+3 7
 UNION 1 2
 UNION 2 3
 UNION 3 4

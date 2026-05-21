@@ -1,4 +1,4 @@
-2 4 
+3 4 
 UNION 1 2
 UNION 3 4
 IsSameComp 1 2

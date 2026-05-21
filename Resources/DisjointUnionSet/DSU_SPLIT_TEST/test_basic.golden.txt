@@ -1,0 +1,12 @@
+Creating DSU  with size:  4
+DSU FULL path compresssion version selected inputs accepted as follow 
+    UNION  U V:      Addes new edge UV to DSU 
+    FIND   U :      Return parent of U contained in DSU data structure 
+    SIZE   U :        Return the size of the component in which U is contained 
+    IsSameComp  U V: Tells if U and V are in the same component 
+Adding edge 1-2 to DSU 
+Adding edge 3-4 to DSU 
+1-2 Are In the Same Component 
+1-3 Are Not In the Same Component 
+Adding edge 2-3 to DSU 
+1-4 Are In the Same Component 

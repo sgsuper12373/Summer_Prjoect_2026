@@ -30,4 +30,20 @@
 
 
 ## Split path compression 
-- YET TO BE IMPLEMENTED 
+- In this version every node in path gets new updated parent. 
+- Same complexity and write as the full compression 
+- the tree height is 1 atmost 
+- this have more cache friendly writes per node 
+ 
+### Testing 
+- Run Following commands to test DSU Half Path compression verision 
+```
+    chmod +x dsu_split_test.sh
+    ./dsu_split_test.sh
+```
+
+
+
+## NEXT STEPS 
+- implement the ROLL BACK DSU 
+- implement the parallel and concurrent DSU 
