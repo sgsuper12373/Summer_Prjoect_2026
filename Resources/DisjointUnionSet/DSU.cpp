@@ -25,8 +25,8 @@ public:
     // using vector.at() because it would give out of bound error 
     int DSU_find(int u) {
         // base case
-        if( u < N_ ){
-            cout << "out of bound node: " << u << "\n max supported size : " << N_ << "\n"; 
+        if (u < 0 || u > N_) {
+            cout << "out of bound node: " << u << "\n max supported size : " << N_ << "\n";
             return -1;
         }
         if (parent_.at(u) == u) return u;
@@ -96,8 +96,8 @@ public:
     */ 
     int DSU_find( int u ){
 
-        if( u < N_ ){
-            cout << "out of bound node: " << u << "\n max supported size : " << N_ << "\n"; 
+        if (u < 0 || u > N_) {
+            cout << "out of bound node: " << u << "\n max supported size : " << N_ << "\n";
             return -1 ;
         }
 
@@ -163,8 +163,8 @@ public:
 
     int DSU_find( int u){
 
-        if( u < N_ ){
-            cout << "out of bound node: " << u << "\n max supported size : " << N_ << "\n"; 
+        if (u < 0 || u > N_) {
+            cout << "out of bound node: " << u << "\n max supported size : " << N_ << "\n";
             return -1;
         }
 
@@ -211,6 +211,7 @@ public:
 }; 
 
 void print_valid_op(){
+    cout << "DSU FULL path compresssion version selected inputs accepted as follow \n";
     cout << "    UNION  U V:      Addes new edge UV to DSU \n" ; 
     cout << "    FIND   U :      Return parent of U contained in DSU data structure \n" ; 
     cout << "    SIZE   U :        Return the size of the component in which U is contained \n" ; 
