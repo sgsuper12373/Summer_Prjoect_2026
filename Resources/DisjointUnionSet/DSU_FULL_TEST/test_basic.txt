@@ -1,0 +1,7 @@
+1 4 
+UNION 1 2
+UNION 3 4
+IsSameComp 1 2
+IsSameComp 1 3
+UNION 2 3
+IsSameComp 1 4

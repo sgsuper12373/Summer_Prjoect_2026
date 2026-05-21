@@ -174,6 +174,73 @@ void test_DSU( DSU_TYPE& ds){
 }
 
 
+template <typename DSUType>
+void process_commands(ifstream &file, int N) {
+    cout << "Creating DSU with size: " << N << "\n";
+    DSUType ds(N);
+
+    string line;
+    while (getline(file, line)) {
+        stringstream ss(line);
+        string cmd;
+        ss >> cmd;
+
+        if (cmd == "UNION") {
+            int u, v;
+            ss >> u >> v;
+            cout << "Adding edge " << u << "-" << v << "\n";
+            ds.DSU_union(u, v);
+
+        } else if (cmd == "FIND") {
+            int u;
+            ss >> u;
+            cout << "Parent [" << u << "] = " << ds.DSU_find(u) << "\n";
+
+        } else if (cmd == "SIZE") {
+            int u;
+            ss >> u;
+            cout << "Size [" << u << "] : " << ds.DSU_sizeOfComp(u) << "\n";
+
+        } else if (cmd == "IsSameComp") {
+            int u, v;
+            ss >> u >> v;
+            cout << (ds.DSU_isInSameComp(u, v) ?
+                "Same Component\n" : "Not Same Component\n");
+
+        } else {
+            cout << "Invalid input\n";
+        }
+    }
+}
+
+
+void test_file(string file_name) {
+    ifstream file(file_name);
+
+    if (!file.is_open()) {
+        cout << "Error opening file\n";
+        return;
+    }
+
+    string line;
+    if (!getline(file, line)) {
+        cout << "ERROR: UNABLE TO PARSE FILE\n";
+        return;
+    }
+
+    stringstream ss(line);
+    int DSU_varient, N;
+    ss >> DSU_varient >> N;
+
+    if (DSU_varient == 1) {
+        process_commands<DSU_FULL>(file, N);
+    } else if (DSU_varient == 2) {
+        process_commands<DSU_HALF>(file, N);
+    } else {
+        cout << "Invalid DSU variant\n";
+    }
+}
+
 void arg_usage(){
     cout << "Run program like ./executable <DSU_VERSION> <N>"; 
     cout << " 1 =>  DSU_FULL"; 
@@ -185,15 +252,20 @@ int main( int argc, char * argv[] ) {
         arg_usage(); 
     }
 
-    int N = stoi(argv[2]); 
-    cout << "Creating DSU  with size:  " << N << "\n"; 
-
+    
     if (string(argv[1]) == "1"){    
+        int N = stoi(argv[2]); 
+        cout << "Creating DSU  with size:  " << N << "\n"; 
         DSU_FULL ds(N) ; 
         test_DSU( ds ); 
     }else if(string(argv[1]) == "2"){
+        int N = stoi(argv[2]); 
+        cout << "Creating DSU  with size:  " << N << "\n"; 
         DSU_HALF ds(N); 
         test_DSU( ds ); 
+    }else if(string(argv[1]) == "-f"){
+        string file_name = string(argv[2]); 
+        test_file(file_name); 
     }
 
     return 0;
