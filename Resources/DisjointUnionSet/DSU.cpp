@@ -25,9 +25,13 @@ public:
     // using vector.at() because it would give out of bound error 
     int DSU_find(int u) {
         // base case
+        if( u < N_ ){
+            cout << "out of bound node: " << u << "\n max supported size : " << N_ << "\n"; 
+            return -1;
+        }
         if (parent_.at(u) == u) return u;
     
-        return parent_[u] = DSU_find(parent_[u]);;
+        return parent_[u] = DSU_find(parent_[u]);
     }
 
     
@@ -36,6 +40,7 @@ public:
 
         if( u > N_  || v > N_ ){
             cout << "Invalid input, max node id can be : " << N_ << " \n"; 
+            return ; 
         }
         int ult_u = DSU_find(u);
         int ult_v = DSU_find(v);
@@ -91,7 +96,12 @@ public:
     */ 
     int DSU_find( int u ){
 
-        while( parent_[u] != u  ){
+        if( u < N_ ){
+            cout << "out of bound node: " << u << "\n max supported size : " << N_ << "\n"; 
+            return -1 ;
+        }
+
+        while( parent_.at(u) != u  ){
             parent_.at(u) = parent_.at(parent_.at(u));
             u = parent_.at(u); 
         }
@@ -101,6 +111,11 @@ public:
     // This will be the same as other methods 
     void DSU_union( int u, int v){
         // if u or v is out of bound we will get error by DSU_find hence no need to worry 
+        if( u > N_  || v > N_ ){
+            cout << "Invalid input, max node id can be : " << N_ << " \n"; 
+            return ; 
+        }
+
         int ult_u = DSU_find(u);  
         int ult_v = DSU_find(v); 
 
@@ -143,10 +158,16 @@ public:
 
     /*
         In the split path compression every node on path gets updated but they don't attach directly to the root.
-        they are attached one level below the root 
+        Each node points to its grandparent, not one below root
     */
 
     int DSU_find( int u){
+
+        if( u < N_ ){
+            cout << "out of bound node: " << u << "\n max supported size : " << N_ << "\n"; 
+            return -1;
+        }
+
         while( parent_[u] != u ){
             int next = parent_.at(u); 
             parent_.at(u) =  parent_.at(parent_.at(u)); // point to grandparent 
@@ -156,6 +177,12 @@ public:
     }
     
     void DSU_union( int u , int v){
+
+        if( u > N_  || v > N_ ){
+            cout << "Invalid input, max node id can be : " << N_ << " \n"; 
+            return ; 
+        }
+
         int ult_u = DSU_find(u); 
         int ult_v = DSU_find(v); 
 
@@ -193,7 +220,6 @@ void print_valid_op(){
 
 template< typename DSU_TYPE > 
 void test_DSU( DSU_TYPE& ds){
-    cout << "DSU FULL path compresssion version selected inputs accepted as follow \n"; 
     print_valid_op(); 
     
     string input; 
@@ -310,6 +336,7 @@ void arg_usage(){
 int main( int argc, char * argv[] ) {
     if (argc < 3 ){
         arg_usage(); 
+        return 1; 
     }
 
     
