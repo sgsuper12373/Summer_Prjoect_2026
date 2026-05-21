@@ -22,11 +22,12 @@ public:
     }
 
     // return ultimate parent_ 
-    int DSU_find(int node) {
+    // using vector.at() because it would give out of bound error 
+    int DSU_find(int u) {
         // base case
-        if (parent_[node] == node) return node;
+        if (parent_.at(u) == u) return u;
     
-        return parent_[node] = DSU_find(parent_[node]);;
+        return parent_[u] = DSU_find(parent_[u]);;
     }
 
     
@@ -85,19 +86,22 @@ public:
         In Half path compression only DSU_find function will get changed 
         This method is more preffered for GPU as I does very less number of writes compared to other methods 
         Every other node points to it's grandparent 
+
+        @NOTE:  Use .at() instead of [] wherever you want bounds safety. It throws std::out_of_range:
     */ 
     int DSU_find( int u ){
 
         while( parent_[u] != u  ){
-            parent_[u] = parent_[parent_[u]]; 
-            u = parent_[u]; 
+            parent_.at(u) = parent_.at(parent_.at(u));
+            u = parent_.at(u); 
         }
         return u; 
     }
 
     // This will be the same as other methods 
     void DSU_union( int u, int v){
-        int ult_u = DSU_find(u); 
+        // if u or v is out of bound we will get error by DSU_find hence no need to worry 
+        int ult_u = DSU_find(u);  
         int ult_v = DSU_find(v); 
 
         if( ult_u == ult_v) return ; // same parent skip the readdition. 
@@ -163,6 +167,8 @@ void test_DSU( DSU_TYPE& ds){
             }else{
                 cout << u << "-" << v << " Are Not In the Same Component \n"; 
             }
+        }else{
+            cout<< "Invalid input \n"; 
         }
     }
 }
@@ -181,7 +187,7 @@ int main( int argc, char * argv[] ) {
 
     int N = stoi(argv[2]); 
     cout << "Creating DSU  with size:  " << N << "\n"; 
-    
+
     if (string(argv[1]) == "1"){    
         DSU_FULL ds(N) ; 
         test_DSU( ds ); 
