@@ -65,6 +65,64 @@ public:
 
 };
 
+
+class DSU_HALF{
+    int N_ ; 
+    vector<int> parent_, size_ ; 
+
+public: 
+    DSU_HALF( int n ){
+        N_ = n ; 
+        parent_.resize(n+1,0); 
+        size_.resize(n+1, 1 ); 
+        
+        for( int i = 0 ; i <= n ; i++ ){
+            parent_[i] = i ; 
+        }
+    }
+
+    /*
+        In Half path compression only DSU_find function will get changed 
+        This method is more preffered for GPU as I does very less number of writes compared to other methods 
+        Every other node points to it's grandparent 
+    */ 
+    int DSU_find( int u ){
+
+        while( parent_[u] != u  ){
+            parent_[u] = parent_[parent_[u]]; 
+            u = parent_[u]; 
+        }
+        return u; 
+    }
+
+    // This will be the same as other methods 
+    void DSU_union( int u, int v){
+        int ult_u = DSU_find(u); 
+        int ult_v = DSU_find(v); 
+
+        if( ult_u == ult_v) return ; // same parent skip the readdition. 
+
+        if( size_[ult_u] < size_[ult_v]){
+            parent_[ult_u] = ult_v ; 
+            size_[ult_v] += size_[ult_u]; 
+        }else{
+            parent_[ult_v] = ult_u ; 
+            size_[ult_u] += size_[ult_v]; 
+        }
+    }
+
+    bool DSU_isInSameComp( int u, int v){
+	    		return DSU_find(u) == DSU_find(v) ; 
+    }
+
+    // return size of component in which u is contained 
+    int DSU_sizeOfComp( int u ){
+        int ult_u = DSU_find(u); 
+        return size_[ult_u]; 
+    }
+
+}; 
+
 void print_valid_op(){
     cout << "    UNION  U V:      Addes new edge UV to DSU \n" ; 
     cout << "    FIND   U :      Return parent of U contained in DSU data structure \n" ; 
@@ -72,11 +130,11 @@ void print_valid_op(){
     cout << "    IsSameComp  U V: Tells if U and V are in the same component \n" ; 
 }
 
-void test_DSU_FULL( int N ){
+
+template< typename DSU_TYPE > 
+void test_DSU( DSU_TYPE& ds){
     cout << "DSU FULL path compresssion version selected inputs accepted as follow \n"; 
     print_valid_op(); 
-    cout << "Creating DSU  with size:  " << N << "\n"; 
-    DSU_FULL ds(N); 
     
     string input; 
     while( getline(cin , input)){
@@ -121,8 +179,15 @@ int main( int argc, char * argv[] ) {
         arg_usage(); 
     }
 
-    if (string(argv[1]) == "1"){
-        test_DSU_FULL( stoi(argv[2]) ); 
+    int N = stoi(argv[2]); 
+    cout << "Creating DSU  with size:  " << N << "\n"; 
+    
+    if (string(argv[1]) == "1"){    
+        DSU_FULL ds(N) ; 
+        test_DSU( ds ); 
+    }else if(string(argv[1]) == "2"){
+        DSU_HALF ds(N); 
+        test_DSU( ds ); 
     }
 
     return 0;
