@@ -1,0 +1,18 @@
+Creating DSU  with size:  5
+DSU ROLLBACK version selected inputs accepted as follow 
+    UNION  U V:      Adds new edge UV to DSU 
+    FIND   U :       Return parent of U contained in DSU data structure 
+    SIZE   U :       Return the size of the component in which U is contained 
+    IsSameComp  U V: Tells if U and V are in the same component 
+    CHECKPOINT:      Saves current state and prints checkpoint ID 
+    ROLLBACK CP:     Rolls back to the specified checkpoint ID 
+    ROLLBACK_ONE:    Rolls back the last union operation 
+    DEPTH:           Returns the history depth (number of union operations) 
+Adding edge 1-2 to DSU 
+Adding edge 3-4 to DSU 
+1-2 Are In the Same Component 
+Checkpoint saved: 4
+Adding edge 2-3 to DSU 
+1-4 Are In the Same Component 
+Rolling back to checkpoint: 4
+1-4 Are Not In the Same Component 

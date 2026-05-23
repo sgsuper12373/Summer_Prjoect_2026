@@ -1,0 +1,9 @@
+4 5
+UNION 1 2
+UNION 3 4
+IsSameComp 1 2
+CHECKPOINT
+UNION 2 3
+IsSameComp 1 4
+ROLLBACK 4
+IsSameComp 1 4

@@ -1,0 +1,19 @@
+Creating DSU  with size:  3
+DSU ROLLBACK version selected inputs accepted as follow 
+    UNION  U V:      Adds new edge UV to DSU 
+    FIND   U :       Return parent of U contained in DSU data structure 
+    SIZE   U :       Return the size of the component in which U is contained 
+    IsSameComp  U V: Tells if U and V are in the same component 
+    CHECKPOINT:      Saves current state and prints checkpoint ID 
+    ROLLBACK CP:     Rolls back to the specified checkpoint ID 
+    ROLLBACK_ONE:    Rolls back the last union operation 
+    DEPTH:           Returns the history depth (number of union operations) 
+Adding edge 0-1 to DSU 
+ INVALID NODE : 0. Valid Range [ 1, 3]
+Adding edge 4-2 to DSU 
+ INVALID NODE : 4. Valid Range [ 1, 3]
+Adding edge 1-2 to DSU 
+Adding edge 1-1 to DSU 
+History depth: 2
+Rolling back last operation
+History depth: 1

@@ -43,7 +43,19 @@
 ```
 
 
+## Rollback DSU
+- In this version, we can undo union operations using an internal stack that records history.
+- This allows rolling back the DSU state to previous checkpoints or undoing the last operation.
+- Path compression is not used in this variant to allow efficient rollback.
+
+### Testing
+- Run following commands to test DSU Rollback version
+```
+    chmod +x dsu_rollback_test.sh
+    ./dsu_rollback_test.sh
+```
+
+
 
 ## NEXT STEPS 
-- implement the ROLL BACK DSU 
 - implement the parallel and concurrent DSU 
