@@ -1,4 +1,3 @@
-#include<iostream> 
 #include<bits/stdc++.h> 
 
 using namespace std; 
@@ -9,22 +8,25 @@ class Graph{
         int u, v, w ; 
 
         //constructor
-        Edge_(int a, int b, int c) {
-        u = a; v = b; w = c;
-    }
+        Edge_(int a, int b, int c) : u(a), v(b), w(c) {}
     }; 
 
     int N_; 
     vector<Edge_> Edge_list_; // tuple storing edge from u -> v with weight w as {u,v,w}; 
     vector<int> parent_, size_ ; // DSU structure for connected components tracking 
 
+    void resetDSU() {
+        iota(parent_.begin(), parent_.end(), 0); 
+        fill(size_.begin(), size_.end(), 1); 
+    }
+
 public: 
 
     // CONSTRUCTOR 
     
-    Graph( int N, vector<vector<int>>& Edges) {
+    Graph( int N, const vector<vector<int>>& Edges) {
         N_ = N; 
-        parent_.resize( N, 0); // zero based indexing 
+        parent_.resize(N); // zero based indexing
         size_.resize( N, 1); 
 
         for (auto& edge : Edges) {
@@ -37,9 +39,7 @@ public:
             Edge_list_.push_back({edge[0], edge[1], edge[2]}); 
         }
 
-        for( int i = 0 ; i <N ; i++ ){
-            parent_[i] = i ; // everyone is parent of itself initially. 
-        }
+        resetDSU();
     }
 
     // Following implementation uses the Half path compression. 
@@ -86,10 +86,9 @@ public:
 
 
     bool G_isInSameComp( int u, int v){
-	    		return G_find(u) == G_find(v) ;
+        return G_find(u) == G_find(v) ;
     }
 
-    // return size of component in which u is contained
     int G_sizeOfComp( int u ){
         return size_[ G_find(u) ];
     }
