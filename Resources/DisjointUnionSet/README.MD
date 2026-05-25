@@ -46,7 +46,7 @@
 ## Rollback DSU
 - In this version, we can undo union operations using an internal stack that records history.
 - This allows rolling back the DSU state to previous checkpoints or undoing the last operation.
-- Path compression is not used in this variant to allow efficient rollback.
+- Path compression can not be used in this variant to allow efficient rollback.
 
 ### Testing
 - Run following commands to test DSU Rollback version
