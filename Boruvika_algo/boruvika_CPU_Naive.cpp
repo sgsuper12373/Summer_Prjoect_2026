@@ -7,7 +7,11 @@ using namespace std;
 class Graph{
     struct Edge_{
         int u, v, w ; 
-        
+
+        //constructor
+        Edge_(int a, int b, int c) {
+        u = a; v = b; w = c;
+    }
     }; 
 
     int N_; 
@@ -30,12 +34,7 @@ public:
                 exit(1);
             }
 
-            Edge_ e ; 
-            e.u = edge[0] ; 
-            e.v = edge[1] ; 
-            e.w = edge[2] ; 
-
-            Edge_list_.push_back(e); 
+            Edge_list_.push_back({edge[0], edge[1], edge[2]}); 
         }
 
         for( int i = 0 ; i <N ; i++ ){
