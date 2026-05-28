@@ -4,6 +4,8 @@ using namespace std;
 
 
 class Graph{
+
+public: 
     struct Edge_{
         int u, v, w ; 
 
@@ -11,6 +13,7 @@ class Graph{
         Edge_(int a, int b, int c) : u(a), v(b), w(c) {}
     }; 
 
+private: 
     int N_; 
     vector<Edge_> Edge_list_; // tuple storing edge from u -> v with weight w as {u,v,w}; 
     vector<int> parent_, size_ ; // DSU structure for connected components tracking 
@@ -27,7 +30,7 @@ public:
     Graph( int N, const vector<vector<int>>& Edges) {
         N_ = N; 
         parent_.resize(N); // zero based indexing
-        size_.resize( N, 1); 
+        size_.resize(N); 
 
         for (auto& edge : Edges) {
             // terminate if edges are not in {u,v,w} format
@@ -93,7 +96,60 @@ public:
         return size_[ G_find(u) ];
     }
 
+    const vector<Edge_>& get_edge_list() const { return  Edge_list_; }
+
+    int get_size() const { return N_; }
+
 }; 
+
+
+unordered_set<int> boruvika_cpu_naive(int N, const vector<vector<int>>& edges) {
+    Graph G(N, edges);
+    unordered_set<int> MST;
+
+    const auto& edge_list = G.get_edge_list();
+    int prev_components = INT_MAX;
+    int curr_components = N ; 
+
+    while ( prev_components != curr_components || curr_components != 1 ) {
+
+        prev_components = curr_components; 
+        // cheapest[c] = index of cheapest edge leaving component c
+        vector<int> cheapest(N, -1);
+
+        for (int i = 0; i < (int) edge_list.size(); i++) {
+            int cu = G.G_find(edge_list[i].u);
+            int cv = G.G_find(edge_list[i].v);
+
+            if (cu == cv) continue; // same component, skip
+
+            // For component cu
+            if (cheapest[cu] == -1 || edge_list[i].w < edge_list[cheapest[cu]].w)
+                cheapest[cu] = i;
+
+            // For component cv
+            if (cheapest[cv] == -1 || edge_list[i].w < edge_list[cheapest[cv]].w)
+                cheapest[cv] = i;
+
+        }
+
+        // add cheapest edges to MST
+        for (int c = 0; c < N; c++) {
+            if (cheapest[c] == -1) continue;
+
+            int cu = G.G_find(edge_list[cheapest[c]].u);
+            int cv = G.G_find(edge_list[cheapest[c]].v);
+
+            if (cu == cv) continue; // already merged this phase
+
+            G.G_union(cu, cv);
+            MST.insert(cheapest[c]);
+            curr_components--;
+        }
+    }
+
+    return MST;
+}
 
 
 int main(){
