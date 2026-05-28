@@ -1,9 +1,0 @@
-Creating CSR format from edgelist
-BFS distances from node 0:
-  node 0 -> 0
-  node 1 -> 1
-  node 2 -> 1
-  node 3 -> 2
-  node 4 -> 3
-  node 5 -> 4
-  node 6 -> unreachable
