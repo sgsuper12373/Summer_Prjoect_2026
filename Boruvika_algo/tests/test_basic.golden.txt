@@ -1,0 +1,5 @@
+Edges in MST:
+  0 - 1 (weight: 10)
+  0 - 3 (weight: 5)
+  2 - 3 (weight: 4)
+Total MST Weight: 19

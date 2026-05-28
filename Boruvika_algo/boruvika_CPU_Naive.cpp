@@ -111,8 +111,8 @@ unordered_set<int> boruvika_cpu_naive(int N, const vector<vector<int>>& edges) {
     int prev_components = INT_MAX;
     int curr_components = N ; 
 
-    while ( prev_components != curr_components || curr_components != 1 ) {
-
+    // to prevent infinite loops in disconnected graphs.
+    while ( prev_components != curr_components && curr_components > 1 ) {
         prev_components = curr_components; 
         // cheapest[c] = index of cheapest edge leaving component c
         vector<int> cheapest(N, -1);
@@ -151,8 +151,161 @@ unordered_set<int> boruvika_cpu_naive(int N, const vector<vector<int>>& edges) {
     return MST;
 }
 
+void print_valid_op() {
+    cout << "Boruvka's MST Algorithm inputs accepted as follows:\n";
+    cout << "    ADD_EDGE u v w :  Adds an edge between u and v with weight w\n";
+    cout << "    RUN            :  Computes and prints the MST\n";
+    cout << "    EXIT           :  Exits the program\n";
+}
 
-int main(){
+void process_stream(istream& input, int N, bool interactive) {
+    if (interactive) {
+        print_valid_op();
+    }
 
-    return 0 ; 
+    string line;
+    vector<vector<int>> edges;
+    bool run_called = false;
+
+    while (getline(input, line)) {
+        if (line.empty()) continue;
+        stringstream ss(line);
+        
+        // Skip comment lines
+        ss >> ws;
+        if (ss.peek() == 'c') continue;
+
+        string cmd;
+        if (isdigit(ss.peek()) || ss.peek() == '-') {
+            int u, v, w;
+            if (ss >> u >> v >> w) {
+                if (interactive) {
+                    cout << "Adding edge " << u << "-" << v << " with weight " << w << "\n";
+                }
+                edges.push_back({u, v, w});
+            } else {
+                if (interactive) {
+                    cout << "Invalid edge format. Expected: u v w\n";
+                }
+            }
+        } else {
+            ss >> cmd;
+            if (cmd == "ADD_EDGE") {
+                int u, v, w;
+                if (ss >> u >> v >> w) {
+                    if (interactive) {
+                        cout << "Adding edge " << u << "-" << v << " with weight " << w << "\n";
+                    }
+                    edges.push_back({u, v, w});
+                } else {
+                    if (interactive) {
+                        cout << "Invalid edge format. Expected: ADD_EDGE u v w\n";
+                    }
+                }
+            } else if (cmd == "RUN") {
+                run_called = true;
+                if (edges.empty()) {
+                    cout << "No edges added yet.\n";
+                    continue;
+                }
+                unordered_set<int> mst_indices = boruvika_cpu_naive(N, edges);
+                vector<vector<int>> mst_edges;
+                for (int idx : mst_indices) {
+                    mst_edges.push_back(edges[idx]);
+                }
+                sort(mst_edges.begin(), mst_edges.end());
+
+                long long total_weight = 0;
+                cout << "Edges in MST:\n";
+                for (const auto& edge : mst_edges) {
+                    cout << "  " << edge[0] << " - " << edge[1] << " (weight: " << edge[2] << ")\n";
+                    total_weight += edge[2];
+                }
+                cout << "Total MST Weight: " << total_weight << "\n";
+            } else if (cmd == "EXIT") {
+                break;
+            } else {
+                if (interactive) {
+                    cout << "Invalid command: " << cmd << "\n";
+                }
+            }
+        }
+    }
+
+    // If stream ended without RUN command, run it automatically
+    if (!run_called && !edges.empty()) {
+        unordered_set<int> mst_indices = boruvika_cpu_naive(N, edges);
+        vector<vector<int>> mst_edges;
+        for (int idx : mst_indices) {
+            mst_edges.push_back(edges[idx]);
+        }
+        sort(mst_edges.begin(), mst_edges.end());
+
+        long long total_weight = 0;
+        cout << "Edges in MST:\n";
+        for (const auto& edge : mst_edges) {
+            cout << "  " << edge[0] << " - " << edge[1] << " (weight: " << edge[2] << ")\n";
+            total_weight += edge[2];
+        }
+        cout << "Total MST Weight: " << total_weight << "\n";
+    }
+}
+
+int main(int argc, char* argv[]) {
+    if (argc < 2) {
+        cerr << "Usage:\n";
+        cerr << "  Interactive: " << argv[0] << " -n <N>\n";
+        cerr << "  File input:  " << argv[0] << " -f <file_name>\n";
+        return 1;
+    }
+
+    string first_arg = argv[1];
+    if (first_arg == "-f") {
+        if (argc < 3) {
+            cerr << "Error: Missing file name for option -f\n";
+            return 1;
+        }
+        string file_name = argv[2];
+        ifstream file(file_name);
+        if (!file.is_open()) {
+            cerr << "Error: Could not open file " << file_name << "\n";
+            return 1;
+        }
+
+        int N = 0;
+        string line;
+        if (getline(file, line)) {
+            stringstream ss(line);
+            string token;
+            ss >> token;
+            if (token == "-n") {
+                ss >> N;
+            } else {
+                try {
+                    N = stoi(token);
+                } catch (...) {
+                    cerr << "Error: Invalid first line of file. Expected number of nodes.\n";
+                    return 1;
+                }
+            }
+        }
+
+        process_stream(file, N, false);
+    } else if (first_arg == "-n") {
+        if (argc < 3) {
+            cerr << "Error: Missing value for option -n\n";
+            return 1;
+        }
+        int N = stoi(argv[2]);
+        cout << "Creating Graph with size: " << N << "\n";
+        process_stream(cin, N, true);
+    } else {
+        cerr << "Invalid option: " << first_arg << "\n";
+        cerr << "Usage:\n";
+        cerr << "  Interactive: " << argv[0] << " -n <N>\n";
+        cerr << "  File input:  " << argv[0] << " -f <file_name>\n";
+        return 1;
+    }
+
+    return 0;
 }
