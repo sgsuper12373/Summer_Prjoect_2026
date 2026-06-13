@@ -134,7 +134,6 @@ void file_to_csr_v1( ifstream& file, int N, int& nnz,
 {
     
     cout << "Creating CSR format from edgelist";
-    nnz = 0 ; 
     vector<vector<int>> edges = file_to_edgelist(file,nnz);
     vector<int> row_idx_coo, col_idx_coo, values_coo; 
     edge_list_to_coo(N,edges,row_idx_coo, col_idx_coo, values_coo); 
