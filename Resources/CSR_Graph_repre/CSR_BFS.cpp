@@ -42,7 +42,7 @@ int main( int argc, char * argv[]){
         cerr << "Cannot open file\n"; 
         return 1; 
      }
-
+     
     string line; 
     getline(file, line); 
     stringstream ss(line); 
