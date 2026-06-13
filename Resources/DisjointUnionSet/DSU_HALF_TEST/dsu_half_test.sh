@@ -1,19 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-# Compile the current DSU Rollback implementation
-g++ DSU_RollBack.cpp -o DSU_RollBack
+# Compile the current DSU implementation
+g++ ../DSU.cpp -o ../DSU
 
 PASS=0
 FAIL=0
 
-for file in ./DSU_ROLLBACK_TEST/test_*.txt; do
+for file in ./test_*.txt; do
     if [[ "$file" == *.golden.txt ]]; then
         continue
     fi
 
     base=$(basename "$file" .txt)
-    golden="./DSU_ROLLBACK_TEST/${base}.golden.txt"
+    golden="./${base}.golden.txt"
 
     if [[ ! -f "$golden" ]]; then
         echo "[ERROR] missing golden file for $file"
@@ -31,7 +31,7 @@ for file in ./DSU_ROLLBACK_TEST/test_*.txt; do
     fi
 
     output=$(mktemp)
-    tail -n +2 "$file" | ./DSU_RollBack 4 "$N" > "$output"
+    tail -n +2 "$file" | ../DSU 2 "$N" > "$output"
 
     if diff -u "$golden" "$output" > /dev/null; then
         echo "$base: PASS"
@@ -45,7 +45,7 @@ for file in ./DSU_ROLLBACK_TEST/test_*.txt; do
     rm -f "$output"
 done
 
-echo -e "\nRESULT: Passed=$PASS Failed=$FAIL"
+echo "\nRESULT: Passed=$PASS Failed=$FAIL"
 if [[ $FAIL -gt 0 ]]; then
     exit 1
 fi

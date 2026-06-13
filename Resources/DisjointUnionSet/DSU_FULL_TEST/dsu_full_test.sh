@@ -1,19 +1,20 @@
 #!/bin/bash
 set -euo pipefail
+shopt -s nullglob
 
 # Compile the current DSU implementation
-g++ DSU.cpp -o DSU
+g++ ../DSU.cpp -o ../DSU
 
 PASS=0
 FAIL=0
 
-for file in ./DSU_SPLIT_TEST/test_*.txt; do
+for file in test_*.txt; do
     if [[ "$file" == *.golden.txt ]]; then
         continue
     fi
 
     base=$(basename "$file" .txt)
-    golden="./DSU_SPLIT_TEST/${base}.golden.txt"
+    golden="${base}.golden.txt"
 
     if [[ ! -f "$golden" ]]; then
         echo "[ERROR] missing golden file for $file"
@@ -31,7 +32,7 @@ for file in ./DSU_SPLIT_TEST/test_*.txt; do
     fi
 
     output=$(mktemp)
-    tail -n +2 "$file" | ./DSU 3 "$N" > "$output"
+    tail -n +2 "$file" | ../DSU 1 "$N" > "$output"
 
     if diff -u "$golden" "$output" > /dev/null; then
         echo "$base: PASS"
@@ -45,7 +46,7 @@ for file in ./DSU_SPLIT_TEST/test_*.txt; do
     rm -f "$output"
 done
 
-echo "\nRESULT: Passed=$PASS Failed=$FAIL"
+printf "\nRESULT: Passed=%d Failed=%d\n" "$PASS" "$FAIL"
 if [[ $FAIL -gt 0 ]]; then
     exit 1
 fi

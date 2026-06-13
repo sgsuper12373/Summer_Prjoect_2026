@@ -48,14 +48,14 @@ public:
         // if already in same component the skip procedure 
         if( ult_u == ult_v ) return ; 
         
-            if (size_[ult_u] < size_[ult_v]) {
-                // join the smaller to big and update the size of big 
-                parent_[ult_u]  = ult_v; 
-                size_[ult_v] += size_[ult_u]; 
-            }else{
-                parent_[ult_v] = ult_u; 
-                size_[ult_u] += size_[ult_v] ; 
-            }
+        if (size_[ult_u] < size_[ult_v]) {
+            // join the smaller to big and update the size of big 
+            parent_[ult_u]  = ult_v; 
+            size_[ult_v] += size_[ult_u]; 
+        }else{
+            parent_[ult_v] = ult_u; 
+            size_[ult_u] += size_[ult_v] ; 
+        }
     }
 
 
