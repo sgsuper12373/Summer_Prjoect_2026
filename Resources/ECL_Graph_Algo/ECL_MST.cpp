@@ -129,7 +129,7 @@ int  ECL_MST_Boruvika_CPU( ECLgraph G ){
     while( prev_comps != curr_comps  ){
         // PHASE_1:  find the cheapest outgoing edge 
         prev_comps = curr_comps;
-        vector<int> cheapest(G.nodes, -1 ); 
+        vector<pair<int,int>> cheapest(G.nodes, {-1,-1}); // pair storing the {u,i}
         for( int u = 0 ; u < G.nodes; u++ ){
             for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
                 int v = G.nlist[i]; 
@@ -140,8 +140,8 @@ int  ECL_MST_Boruvika_CPU( ECLgraph G ){
 
                 if( ult_u == ult_v ) continue; // same comp, skip 
 
-                if(cheapest[ult_u] == -1 || w <  G.eweight[ cheapest[ult_u]]){
-                    cheapest[ult_u] = i ; 
+                if(cheapest[ult_u].second == -1 || w <  G.eweight[ cheapest[ult_u].second]){
+                    cheapest[ult_u]= {u,i} ; 
                 }
             }
         }
@@ -149,20 +149,14 @@ int  ECL_MST_Boruvika_CPU( ECLgraph G ){
         // PHASE_2: merge comps
 
         for( int c = 0 ; c <  G.nodes; c++ ){
-            if( cheapest[c] == -1 ) continue; 
+            if( cheapest[c].second == -1 ) continue; 
 
-            int i = cheapest[c]; 
+            int i = cheapest[c].second; 
 
             // find the u from i 
-            int u = -1; 
-            for( int tmp = 0; tmp < G.nodes; tmp++ ){
-                if( G.nindex[tmp] <= i && i < G.nindex[tmp + 1]){
-                    u = tmp; 
-                }
-            }
-
-            if( u == - 1){
-                cerr<<"ERROR: Edges not found!"; 
+            int u = cheapest[c].first; 
+            if( u == -1 ) {
+                cerr <<"ERROR: invalid parent \n"; 
                 exit(1); 
             }
 
