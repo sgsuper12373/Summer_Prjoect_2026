@@ -68,8 +68,44 @@ public:
 
 
 int ECL_MST_prims( ECLgraph G){
+
     int MST_Weight = 0; 
+    vector<int> parent(G.nodes,-1); 
+    vector<int> key(G.nodes,INT_MAX); 
+    vector<bool> visited(G.nodes,false);
+
+    priority_queue< pair<int,int>, 
+                    vector<pair<int,int>>, 
+                    greater<pair<int,int>> > pq; 
+
+    for( int i = 0 ; i < G.nodes; i++ ){
+        if( !visited[i]){
+            key[i] = 0 ; 
+            pq.push({0,i}); 
+            while(!pq.empty()){
+                auto[w,u] = pq.top(); pq.pop(); 
     
+                if(visited[u]) continue; 
+                visited[u] = true; 
+    
+                if(parent[u] != -1 ){
+                    MST_Weight += w ; 
+                }
+    
+                for( int j = G.nindex[u]; j < G.nindex[u+1]; j++ ){
+                    int v = G.nlist[j]; 
+                    int wt = G.eweight[j]; 
+    
+                    if( !visited[v] && wt < key[v] ){
+                        key[v] = wt; 
+                        parent[v] = u ; 
+                        pq.push({wt,v}); 
+                    }
+                }
+            }
+        }
+    }
+
     return MST_Weight ; 
 }
 
@@ -184,12 +220,21 @@ int main(int argc, char* argv[]){
     auto start = high_resolution_clock::now();
     int MST_boruka_cpu  = ECL_MST_Boruvika_CPU(G); 
     auto end = high_resolution_clock::now(); 
-    auto duration = duration_cast<microseconds>(end - start); 
+    auto boruvka_duration = duration_cast<microseconds>(end - start); 
+
+    start = high_resolution_clock::now();
+    int MST_prims_cpu = ECL_MST_prims(G); 
+    end = high_resolution_clock::now(); 
+    auto prims_duration = duration_cast<microseconds>(end-start);
 
     cout << "\nMST weight for the " <<   argv[1]<<"\n"; 
     cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n"; 
-    cout << "MST_boruka_cpu " << MST_boruka_cpu <<"\n"; 
-    cout << "Computation time: " << duration.count() << "\n";   
+    cout << "BORUVIKA ALGORITHMS\n" ; 
+    cout << "\tMST weight: " << MST_boruka_cpu << "\n"; 
+    cout << "\tComputation time: " << boruvka_duration.count() << "\n" ; 
+    cout << "PRIMS ALOGORITHMS\n" ; 
+    cout << "\t MST weight: " << MST_prims_cpu<< "\n"; 
+    cout << "\tComputation time: " << prims_duration.count() << "\n";   
 
 
     freeECLgraph(G); 
