@@ -1,12 +1,13 @@
 #include<bits/stdc++.h>
 #include "ECLgraph.h"
-#include<chrono> 
+#include<chrono>
+#include<omp.h>
 
-using namespace std; 
-using namespace std::chrono; 
+using namespace std;
+using namespace std::chrono;
 
 class DSU{
-private: 
+private:    
     int N; 
     vector<int> parent, size; 
 
@@ -112,6 +113,72 @@ int ECL_MST_prims( ECLgraph G){
 
 
 
+int  ECL_MST_Boruvika_OMP( ECLgraph G ){
+
+    DSU dsu_g = DSU(G.nodes); 
+    int MST_Weight = 0; 
+    int prev_comps = INT_MAX; 
+    int curr_comps = G.nodes; 
+
+    while( prev_comps != curr_comps  ){
+        // PHASE_1:  find the cheapest outgoing edge 
+        prev_comps = curr_comps;
+        vector<pair<int,int>> cheapest(G.nodes, {-1,-1}); // pair storing the {u,i}
+        #pragma omp parallel for 
+        for( int u = 0 ; u < G.nodes; u++ ){
+            for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
+                int v = G.nlist[i]; 
+                int w = G.eweight[i]; 
+
+                int ult_u = dsu_g.G_find(u); 
+                int ult_v = dsu_g.G_find(v); 
+
+                if( ult_u == ult_v ) continue; // same comp, skip 
+
+                #pragma omp critical
+                {
+                    if(cheapest[ult_u].second == -1 || w <  G.eweight[ cheapest[ult_u].second]){
+                        cheapest[ult_u]= {u,i} ; 
+                    }
+                }
+            }
+        }
+
+        // PHASE_2: merge comps
+
+        for( int c = 0 ; c <  G.nodes; c++ ){
+            if( cheapest[c].second == -1 ) continue; 
+
+            int i = cheapest[c].second; 
+
+            // find the u from i 
+            int u = cheapest[c].first; 
+            if( u == -1 ) {
+                cerr <<"ERROR: invalid parent \n"; 
+                exit(1); 
+            }
+
+            int v = G.nlist[i]; 
+            int w = G.eweight[i]; 
+
+            int ult_u = dsu_g.G_find(u); 
+            int ult_v = dsu_g.G_find(v); 
+
+            if( ult_u == ult_v ) continue;
+
+            dsu_g.G_union(ult_u, ult_v); 
+            MST_Weight+=w; 
+            curr_comps--; 
+        }
+        
+    }
+
+    return MST_Weight; 
+
+}
+
+
+
 
 /**
  * @brief Input is the CSR format. the ECL_MST_Boruvika is supoosed to return the weight of MST as there might exist multiple MST
@@ -214,21 +281,30 @@ int main(int argc, char* argv[]){
     auto start = high_resolution_clock::now();
     int MST_boruka_cpu  = ECL_MST_Boruvika_CPU(G); 
     auto end = high_resolution_clock::now(); 
-    auto boruvka_duration = duration_cast<microseconds>(end - start); 
+    auto boruvka_cpu_duration = duration_cast<microseconds>(end - start); 
 
     start = high_resolution_clock::now();
     int MST_prims_cpu = ECL_MST_prims(G); 
     end = high_resolution_clock::now(); 
     auto prims_duration = duration_cast<microseconds>(end-start);
 
+    start = high_resolution_clock::now();
+    int MST_boruvka_omp = ECL_MST_Boruvika_OMP(G); 
+    end = high_resolution_clock::now(); 
+    auto boruvka_omp_duration = duration_cast<microseconds>(end-start);
+
     cout << "\nMST weight for the " <<   argv[1]<<"\n"; 
     cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n"; 
     cout << "BORUVIKA ALGORITHMS\n" ; 
-    cout << "\tMST weight: " << MST_boruka_cpu << "\n"; 
-    cout << "\tComputation time: " << boruvka_duration.count() << "\n" ; 
+    cout << "\t MST weight: " << MST_boruka_cpu << "\n"; 
+    cout << "\t Computation time: " << boruvka_cpu_duration.count() << "\n" ; 
     cout << "PRIMS ALOGORITHMS\n" ; 
     cout << "\t MST weight: " << MST_prims_cpu<< "\n"; 
-    cout << "\tComputation time: " << prims_duration.count() << "\n";   
+    cout << "\t Computation time: " << prims_duration.count() << "\n";  
+    cout << "BORUKAS OpenMP ALOGORITHMS\n" ; 
+    cout << "\t MST weight: " << MST_boruvka_omp<< "\n"; 
+    cout << "\t Computation time: " << boruvka_omp_duration.count() << "\n";   
+ 
 
 
     freeECLgraph(G); 
