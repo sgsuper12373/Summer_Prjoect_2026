@@ -183,7 +183,7 @@ int  ECL_MST_Boruvika_OMP( ECLgraph G ){
             MST_Weight+=w; 
             curr_comps--; 
         }
-        
+
     }
 
     return MST_Weight; 
@@ -196,27 +196,34 @@ int  ECL_MST_Boruvika_OMP( ECLgraph G ){
 
 int  ECL_MST_Boruvika_CPU( ECLgraph G ){
 
-    DSU dsu_g = DSU(G.nodes); 
-    int MST_Weight = 0; 
-    int prev_comps = INT_MAX; 
-    int curr_comps = G.nodes; 
+    DSU dsu_g = DSU(G.nodes);
+    int MST_Weight = 0;
+    int prev_comps = INT_MAX;
+    int curr_comps = G.nodes;
+
+    vector<int> comp(G.nodes);     // comp[u] = component id of node u
+    vector<int> cheapest(G.nodes); // cheapest[c] = edge index of comp c's cheapest outgoing edge
 
     while( prev_comps != curr_comps  ){
-        // PHASE_1:  find the cheapest outgoing edge 
         prev_comps = curr_comps;
-        vector<pair<int,int>> cheapest(G.nodes, {-1,-1}); // pair storing the {u,i}
+
+        // PHASE_0: flatten component ids once and reset cheapest
         for( int u = 0 ; u < G.nodes; u++ ){
+            comp[u] = dsu_g.G_find(u);
+            cheapest[u] = -1;
+        }
+
+        // PHASE_1:  find the cheapest outgoing edge per component
+        for( int u = 0 ; u < G.nodes; u++ ){
+            int ult_u = comp[u];
             for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
                 int v = G.nlist[i]; 
-                int w = G.eweight[i]; 
+                int w = G.eweight[i];
 
-                int ult_u = dsu_g.G_find(u); 
-                int ult_v = dsu_g.G_find(v); 
+                if( ult_u == comp[v] ) continue; // same comp, skip
 
-                if( ult_u == ult_v ) continue; // same comp, skip 
-
-                if(cheapest[ult_u].second == -1 || w <  G.eweight[ cheapest[ult_u].second]){
-                    cheapest[ult_u]= {u,i} ; 
+                if( cheapest[ult_u] == -1 || w < G.eweight[ cheapest[ult_u] ] ){
+                    cheapest[ult_u] = i ;
                 }
             }
         }
@@ -224,33 +231,25 @@ int  ECL_MST_Boruvika_CPU( ECLgraph G ){
         // PHASE_2: merge comps
 
         for( int c = 0 ; c <  G.nodes; c++ ){
-            if( cheapest[c].second == -1 ) continue; 
+            if( cheapest[c] == -1 ) continue;
 
-            int i = cheapest[c].second; 
+            int i = cheapest[c];
+            int v = G.nlist[i];
+            int w = G.eweight[i];
 
-            // find the u from i 
-            int u = cheapest[c].first; 
-            if( u == -1 ) {
-                cerr <<"ERROR: invalid parent \n"; 
-                exit(1); 
-            }
-
-            int v = G.nlist[i]; 
-            int w = G.eweight[i]; 
-
-            int ult_u = dsu_g.G_find(u); 
-            int ult_v = dsu_g.G_find(v); 
+            int ult_u = dsu_g.G_find(c);
+            int ult_v = dsu_g.G_find(v);
 
             if( ult_u == ult_v ) continue;
 
-            dsu_g.G_union(ult_u, ult_v); 
-            MST_Weight+=w; 
-            curr_comps--; 
+            dsu_g.G_union(ult_u, ult_v);
+            MST_Weight+=w;
+            curr_comps--;
         }
-        
+
     }
 
-    return MST_Weight; 
+    return MST_Weight;
 
 }
 
