@@ -1,0 +1,43 @@
+# Build artifacts
+/build/
+/bin/
+/Debug/
+/Release/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Makefile
+/*.o
+/*.obj
+/*.out
+/*.exe
+/*.dll
+/*.so
+/*.dylib
+/*.a
+/*.lib
+/*.lo
+/*.la
+
+# Package manager / IDE files
+/.vscode/
+/.idea/
+*.code-workspace
+
+# macOS files
+.DS_Store
+
+# Editor swap/temp files
+*~
+*.swp
+*.swo
+*.tmp
+*.log
+
+# Backup files
+*.bak
+*.orig
+
+# Compiled Python files (if any tools/scripts exist)
+__pycache__/
+*.py[cod]
