@@ -36,10 +36,18 @@ public:
         }
 
         while(parent[u] != u){
-            parent[u] = parent[parent[u]]; 
-            u = parent[u]; 
+            parent[u] = parent[parent[u]];
+            u = parent[u];
         }
-        return u; 
+        return u;
+    }
+
+    // read only DSU find, for no synchronization issue with parallel version of code 
+    int G_find_ro( int u ) const {
+        while(parent[u] != u){
+            u = parent[u];
+        }
+        return u;
     }
 
     void G_union( int u, int v ){
@@ -113,6 +121,15 @@ int ECL_MST_prims( ECLgraph G){
 
 
 
+static inline void atomicMinU64( unsigned long long* addr, unsigned long long val ){
+    unsigned long long old = __atomic_load_n(addr, __ATOMIC_RELAXED);
+    while( val < old &&
+           !__atomic_compare_exchange_n(addr, &old, val, false,
+                                        __ATOMIC_RELAXED, __ATOMIC_RELAXED)){
+        // on CAS failure old is refreshed; loop re-checks val < old
+    }
+}
+
 int  ECL_MST_Boruvika_OMP( ECLgraph G ){
 
     DSU dsu_g = DSU(G.nodes); 
@@ -120,49 +137,45 @@ int  ECL_MST_Boruvika_OMP( ECLgraph G ){
     int prev_comps = INT_MAX; 
     int curr_comps = G.nodes; 
 
+    vector<int> comp(G.nodes);
+    vector<unsigned long long> cheapest(G.nodes);
+    const unsigned long long INF = ~0ULL;
+
     while( prev_comps != curr_comps  ){
-        // PHASE_1:  find the cheapest outgoing edge 
         prev_comps = curr_comps;
-        vector<pair<int,int>> cheapest(G.nodes, {-1,-1}); // pair storing the {u,i}
-        #pragma omp parallel for 
+
+        // PHASE_0: flatten component ids and reset cheapest ( read-only find )
+        #pragma omp parallel for schedule(static)
         for( int u = 0 ; u < G.nodes; u++ ){
+            comp[u] = dsu_g.G_find_ro(u);
+            cheapest[u] = INF;
+        }
+
+        // PHASE_1:  find the cheapest outgoing edge per component ( lock-free )
+        #pragma omp parallel for schedule(guided)
+        for( int u = 0 ; u < G.nodes; u++ ){
+            int ult_u = comp[u];
             for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
-                int v = G.nlist[i]; 
-                int w = G.eweight[i]; 
+                int v = G.nlist[i];
 
-                int ult_u = dsu_g.G_find(u); 
-                int ult_v = dsu_g.G_find(v); 
+                if( ult_u == comp[v] ) continue; // same comp, skip
 
-                if( ult_u == ult_v ) continue; // same comp, skip 
-
-                #pragma omp critical
-                {
-                    if(cheapest[ult_u].second == -1 || w <  G.eweight[ cheapest[ult_u].second]){
-                        cheapest[ult_u]= {u,i} ; 
-                    }
-                }
+                unsigned long long key = ((unsigned long long)(unsigned)G.eweight[i] << 32) | (unsigned)i;
+                atomicMinU64(&cheapest[ult_u], key);
             }
         }
 
         // PHASE_2: merge comps
 
         for( int c = 0 ; c <  G.nodes; c++ ){
-            if( cheapest[c].second == -1 ) continue; 
+            if( cheapest[c] == INF ) continue;
 
-            int i = cheapest[c].second; 
+            int i = (int)(cheapest[c] & 0xffffffffu);
+            int w = (int)(cheapest[c] >> 32);
+            int v = G.nlist[i];
 
-            // find the u from i 
-            int u = cheapest[c].first; 
-            if( u == -1 ) {
-                cerr <<"ERROR: invalid parent \n"; 
-                exit(1); 
-            }
-
-            int v = G.nlist[i]; 
-            int w = G.eweight[i]; 
-
-            int ult_u = dsu_g.G_find(u); 
-            int ult_v = dsu_g.G_find(v); 
+            int ult_u = dsu_g.G_find(c);
+            int ult_v = dsu_g.G_find(v);
 
             if( ult_u == ult_v ) continue;
 
@@ -180,12 +193,7 @@ int  ECL_MST_Boruvika_OMP( ECLgraph G ){
 
 
 
-/**
- * @brief Input is the CSR format. the ECL_MST_Boruvika is supoosed to return the weight of MST as there might exist multiple MST
- * 
- * @param G Graph
- * @return int 
- */
+
 int  ECL_MST_Boruvika_CPU( ECLgraph G ){
 
     DSU dsu_g = DSU(G.nodes); 
@@ -301,8 +309,8 @@ int main(int argc, char* argv[]){
     cout << "PRIMS ALOGORITHMS\n" ; 
     cout << "\t MST weight: " << MST_prims_cpu<< "\n"; 
     cout << "\t Computation time: " << prims_duration.count() << "\n";  
-    cout << "BORUKAS OpenMP ALOGORITHMS\n" ; 
-    cout << "\t MST weight: " << MST_boruvka_omp<< "\n"; 
+    cout << "BORUKAS OpenMP ALOGORITHMS\n" ;
+    cout << "\t MST weight: " << MST_boruvka_omp<< "\n";
     cout << "\t Computation time: " << boruvka_omp_duration.count() << "\n";   
  
 
