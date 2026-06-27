@@ -107,7 +107,7 @@ void freeECLgraph(ECLgraph &g)
  */
 void printGraphInfo(ECLgraph G ){
     std::cout<< "Node : " << G.nodes << "\n"; 
-    std::cout << "Edges: " << G.edges << "\n"; 
+    std::   cout << "Edges: " << G.edges << "\n"; 
     std::cout << "row_ptr : " ; for( int i = 0 ; i <= G.nodes ; i++ ) std::cout << G.nindex[i]  <<" "; std::cout <<"\n"; 
     std::cout << "row_ptr : " ; for( int i = 0 ; i <= G.edges ; i++ ) std::cout << G.nlist[i]   <<" "; std::cout <<"\n"; 
     std::cout << "row_ptr : " ; for( int i = 0 ; i <= G.edges ; i++ ) std::cout << G.eweight[i] <<" "; std::cout <<"\n"; 

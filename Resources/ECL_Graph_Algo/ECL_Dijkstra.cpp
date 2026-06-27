@@ -9,7 +9,7 @@ using namespace std::chrono;
 vector<int> ECL_Dijkstra(ECLgraph G, int src ){
     vector<int> dist(G.nodes, INT_MAX); 
     priority_queue< pair<int,int>, 
-                    vector< pair<int,int>> , 
+                    vector<pair<int,int>> , 
                     greater<pair<int,int>> > pq; 
     
     dist[src] = 0; 

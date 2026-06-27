@@ -6,6 +6,75 @@
 using namespace std;
 using namespace std::chrono;
 
+
+
+class Parallel_DSU{
+
+private: 
+    int N ; 
+    vector<int> parent; 
+
+    bool isValidNode( int u ){
+        if( u>= N || u < 0 ) return 0; 
+        return 1; 
+    }
+
+    void resetDSU(){
+        iota(parent.begin(), parent.end(),0); 
+    }
+
+
+public: 
+    Parallel_DSU( int N ){
+        this->N = N ; 
+        parent.resize(N);
+        resetDSU(); 
+    }
+
+    int G_find_parallel( int u ){
+        if( !isValidNode(u)){
+            cerr << "ERROR: Invalid node/ node out of range"; 
+            exit(1); 
+        }
+
+        while( true ){
+            int p = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
+            if( p == u ) return u; 
+
+            int gp = __atomic_load_n(&parent[p], __ATOMIC_RELAXED); 
+
+            __atomic_compare_exchange_n(&parent[u], &p,gp,false,__ATOMIC_RELAXED, __ATOMIC_RELAXED); 
+            u = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
+        }
+    }
+
+    bool G_union_parallel( int u, int v ){
+        if( !isValidNode(u) || !isValidNode(v)){
+            cerr << "ERROR: Invalid node/ node out of range"; 
+            exit(1); 
+        }
+
+        while(true){
+            u = G_find_parallel(u); 
+            v = G_find_parallel(v); 
+
+            if( u == v ) return false; 
+
+            if( u > v ) std::swap(u,v); 
+
+            int expected = v ; 
+            if (__atomic_compare_exchange_n(&parent[v], &expected, u, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+                return true; // Successfully merged
+            }
+
+        }
+    }
+
+
+    
+}; 
+
+
 class DSU{
 private:    
     int N; 
@@ -55,7 +124,7 @@ public:
             cerr << "ERROR: Invalid node/ node out of range"; 
             exit(1); 
         } 
-         int ult_u = G_find(u) ; 
+        int ult_u = G_find(u) ; 
         int ult_v = G_find(v) ;
 
         // SKIP union if already in component
@@ -130,7 +199,7 @@ static inline void atomicMinU64( unsigned long long* addr, unsigned long long va
     }
 }
 
-int  ECL_MST_Boruvika_OMP( ECLgraph G ){
+int  ECL_MST_Boruvka_OMP( ECLgraph G ){
 
     DSU dsu_g = DSU(G.nodes); 
     int MST_Weight = 0; 
@@ -191,10 +260,65 @@ int  ECL_MST_Boruvika_OMP( ECLgraph G ){
 }
 
 
+int ECL_MST_Boruvka_OMP_v2( ECLgraph G ){
+    Parallel_DSU dsu_g(G.nodes); 
+    int MST_Weight = 0; 
+    int prev_comps = INT_MAX; 
+    int curr_comps = G.nodes; 
+
+    vector<int> comp(G.nodes);
+    vector<unsigned long long> cheapest(G.nodes);
+    const unsigned long long INF = ~0ULL;
+
+    while( prev_comps != curr_comps  ){
+        prev_comps = curr_comps;
+
+        // PHASE_0: flatten component ids and reset cheapest ( read-only find )
+        #pragma omp parallel for schedule(static)
+        for( int u = 0 ; u < G.nodes; u++ ){
+            comp[u] = dsu_g.G_find_parallel(u);
+            cheapest[u] = INF;
+        }
+
+        // PHASE_1:  find the cheapest outgoing edge per component 
+        #pragma omp parallel for schedule(guided)
+        for( int u = 0 ; u < G.nodes; u++ ){
+            int ult_u = comp[u];
+            for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
+                int v = G.nlist[i];
+
+                if( ult_u == comp[v] ) continue; // same comp, skip
+
+                unsigned long long key = ((unsigned long long)(unsigned)G.eweight[i] << 32) | (unsigned)i;
+                atomicMinU64(&cheapest[ult_u], key);
+            }
+        }
+
+        // PHASE_2: merge comps
+
+        #pragma omp parallel for schedule(guided)
+        for( int c = 0 ; c <  G.nodes; c++ ){
+            if( cheapest[c] == INF ) continue;
+
+            int i = (int)(cheapest[c] & 0xffffffffu);
+            int w = (int)(cheapest[c] >> 32);
+            int v = G.nlist[i];
+
+            if( dsu_g.G_union_parallel(c, v) ) {
+                #pragma omp atomic
+                MST_Weight+=w; 
+                #pragma omp atomic
+                curr_comps--; 
+            }
+        }
+
+    }
+
+    return MST_Weight; 
+}
 
 
-
-int  ECL_MST_Boruvika_CPU( ECLgraph G ){
+int  ECL_MST_Boruvka_CPU( ECLgraph G ){
 
     DSU dsu_g = DSU(G.nodes);
     int MST_Weight = 0;
@@ -230,15 +354,18 @@ int  ECL_MST_Boruvika_CPU( ECLgraph G ){
 
         // PHASE_2: merge comps
 
-        for( int c = 0 ; c <  G.nodes; c++ ){
-            if( cheapest[c] == -1 ) continue;
+        for( int u = 0 ; u <  G.nodes; u++ ){
+            if( cheapest[u] == -1 ) continue;
 
-            int i = cheapest[c];
+            int i = cheapest[u];
             int v = G.nlist[i];
             int w = G.eweight[i];
 
-            int ult_u = dsu_g.G_find(c);
+            int ult_u = dsu_g.G_find(u);
             int ult_v = dsu_g.G_find(v);
+
+            // int ult_u = comp[u]; 
+            // int ult_v = comp[v]; 
 
             if( ult_u == ult_v ) continue;
 
@@ -286,7 +413,7 @@ int main(int argc, char* argv[]){
 
     
     auto start = high_resolution_clock::now();
-    int MST_boruka_cpu  = ECL_MST_Boruvika_CPU(G); 
+    int MST_boruka_cpu  = ECL_MST_Boruvka_CPU(G); 
     auto end = high_resolution_clock::now(); 
     auto boruvka_cpu_duration = duration_cast<microseconds>(end - start); 
 
@@ -296,25 +423,37 @@ int main(int argc, char* argv[]){
     auto prims_duration = duration_cast<microseconds>(end-start);
 
     start = high_resolution_clock::now();
-    int MST_boruvka_omp = ECL_MST_Boruvika_OMP(G); 
+    int MST_boruvka_omp = ECL_MST_Boruvka_OMP(G); 
     end = high_resolution_clock::now(); 
     auto boruvka_omp_duration = duration_cast<microseconds>(end-start);
 
-    cout << "\nMST weight for the " <<   argv[1]<<"\n"; 
-    cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n"; 
-    cout << "BORUVIKA ALGORITHMS\n" ; 
-    cout << "\t MST weight: " << MST_boruka_cpu << "\n"; 
-    cout << "\t Computation time: " << boruvka_cpu_duration.count() << "\n" ; 
-    cout << "PRIMS ALOGORITHMS\n" ; 
-    cout << "\t MST weight: " << MST_prims_cpu<< "\n"; 
-    cout << "\t Computation time: " << prims_duration.count() << "\n";  
-    cout << "BORUKAS OpenMP ALOGORITHMS\n" ;
-    cout << "\t MST weight: " << MST_boruvka_omp<< "\n";
-    cout << "\t Computation time: " << boruvka_omp_duration.count() << "\n";   
- 
+    start = high_resolution_clock::now();
+    int MST_boruvka_omp_v2 = ECL_MST_Boruvka_OMP_v2(G); 
+    end = high_resolution_clock::now(); 
+    auto boruvka_omp_v2_duration = duration_cast<microseconds>(end-start);
 
+    cout << "\nMST weight for the " << argv[1] << "\n"; 
+    cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n"; 
+    cout << "--------------------------------------------------\n";
+    cout << "BORUVKA SERIAL CPU ALGORITHM\n" ; 
+    cout << "\t MST weight: " << MST_boruka_cpu << "\n"; 
+    cout << "\t Computation time: " << boruvka_cpu_duration.count() << " us\n" ; 
+    
+    cout << "PRIMS SERIAL CPU ALGORITHM\n" ; 
+    cout << "\t MST weight: " << MST_prims_cpu<< "\n"; 
+    cout << "\t Computation time: " << prims_duration.count() << " us\n";  
+    
+    cout << "BORUVKA OpenMP ALGORITHM (v1 - Serial Phase 2)\n" ;
+    cout << "\t MST weight: " << MST_boruvka_omp<< "\n";
+    cout << "\t Computation time: " << boruvka_omp_duration.count() << " us\n";   
+    cout << "\t Speedup vs CPU: " << (double)boruvka_cpu_duration.count() / boruvka_omp_duration.count() << "x\n";
+    
+    cout << "BORUVKA OpenMP ALGORITHM (v2 - Fully Parallel)\n" ;
+    cout << "\t MST weight: " << MST_boruvka_omp_v2 << "\n";
+    cout << "\t Computation time: " << boruvka_omp_v2_duration.count() << " us\n";
+    cout << "\t Speedup vs CPU: " << (double)boruvka_cpu_duration.count() / boruvka_omp_v2_duration.count() << "x\n";
+    cout << "--------------------------------------------------\n";
 
     freeECLgraph(G); 
     return 0; 
-
 }
