@@ -1,6 +1,6 @@
 # ECL_MST — OpenMP Borůvka's Algorithm
 
-This document explains the parallel OpenMP implementation of Borůvka's Minimum Spanning Tree (MST) algorithm in `ECL_MST.cpp` (`ECL_MST_Boruvika_OMP`). It walks through the code step-by-step and explains every synchronization primitive used, why it is needed, and how correctness is maintained.
+This document explains the parallel OpenMP implementation of Borůvka's Minimum Spanning Tree (MST) algorithm in `ECL_MST.cpp` (`ECL_MST_Boruvka_OMP`). It walks through the code step-by-step and explains every synchronization primitive used, why it is needed, and how correctness is maintained.
 
 ---
 

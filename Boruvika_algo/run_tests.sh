@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Compile the Boruvka CPU Naive implementation
-g++ -O3 boruvika_CPU_Naive.cpp -o boruvika_CPU_Naive
+g++ -O3 boruvka_cpu_naive.cpp -o boruvka_cpu_naive
 
 PASS=0
 FAIL=0
@@ -24,7 +24,7 @@ for file in ./tests/test_*.txt; do
     fi
 
     output=$(mktemp)
-    ./boruvika_CPU_Naive -f "$file" > "$output"
+    ./boruvka_cpu_naive -f "$file" > "$output"
 
     if diff -u "$golden" "$output" > /dev/null; then
         echo "  $base: PASS"

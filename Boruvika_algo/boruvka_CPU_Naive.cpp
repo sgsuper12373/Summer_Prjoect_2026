@@ -103,7 +103,7 @@ public:
 }; 
 
 
-unordered_set<int> boruvika_cpu_naive(int N, const vector<vector<int>>& edges) {
+unordered_set<int> boruvka_cpu_naive(int N, const vector<vector<int>>& edges) {
     Graph G(N, edges);
     unordered_set<int> MST;
 
@@ -208,7 +208,7 @@ void process_stream(istream& input, int N, bool interactive) {
                     cout << "No edges added yet.\n";
                     continue;
                 }
-                unordered_set<int> mst_indices = boruvika_cpu_naive(N, edges);
+                unordered_set<int> mst_indices = boruvka_cpu_naive(N, edges);
                 vector<vector<int>> mst_edges;
                 for (int idx : mst_indices) {
                     mst_edges.push_back(edges[idx]);
@@ -234,7 +234,7 @@ void process_stream(istream& input, int N, bool interactive) {
 
     // If stream ended without RUN command, run it automatically
     if (!run_called && !edges.empty()) {
-        unordered_set<int> mst_indices = boruvika_cpu_naive(N, edges);
+        unordered_set<int> mst_indices = boruvka_cpu_naive(N, edges);
         vector<vector<int>> mst_edges;
         for (int idx : mst_indices) {
             mst_edges.push_back(edges[idx]);
