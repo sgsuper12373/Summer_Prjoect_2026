@@ -1,5 +1,6 @@
 #pragma once 
 #include <bits/stdc++.h>
+#include<omp.h> 
 using namespace std ;
 
 /**
@@ -268,3 +269,55 @@ public:
     }
 }; 
 
+class DSU_half_omp: public DSU{
+public: 
+    DSU_half_omp( int N ) : DSU(N) {}
+
+    int G_find( int u ) override {
+
+        if( !isValidNode(u) ){
+            cerr << "Error: invalid Node: " << u << "\n"; 
+            exit(1); 
+        }
+
+        while(true){
+            int p = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
+            if( p == u ) return u; 
+            
+            int gp = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
+
+            __atomic_compare_exchange_n(&parent[u],&p, gp, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED); 
+            u = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
+        }
+    }
+
+
+    bool G_union( int u, int v) override {
+        if( !isValidNode(u) || !isValidNode(v)){
+            cerr << "ERROR: Invalid node/ node out of range"; 
+            exit(1); 
+        }
+
+        while(true){
+            u = G_find(u); 
+            v = G_find(v); 
+
+            if( u == v ) return false; 
+
+            if( u > v ) std::swap(u,v); 
+
+            int expected = v ; 
+            if (__atomic_compare_exchange_n(&parent[v], &expected, u, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+                return true; // Successfully merged
+            }
+
+        }
+
+        return 0 ; 
+    }
+
+
+    bool isInSae
+    
+
+}; 
