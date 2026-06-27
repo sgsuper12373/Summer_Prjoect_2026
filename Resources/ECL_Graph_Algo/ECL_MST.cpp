@@ -199,7 +199,7 @@ static inline void atomicMinU64( unsigned long long* addr, unsigned long long va
     }
 }
 
-int  ECL_MST_Boruvka_OMP( ECLgraph G ){
+int  ECL_MST_Boruvka_OMP_v1( ECLgraph G ){
 
     DSU dsu_g = DSU(G.nodes); 
     int MST_Weight = 0; 
@@ -423,7 +423,7 @@ int main(int argc, char* argv[]){
     auto prims_duration = duration_cast<microseconds>(end-start);
 
     start = high_resolution_clock::now();
-    int MST_boruvka_omp = ECL_MST_Boruvka_OMP(G); 
+    int MST_boruvka_omp = ECL_MST_Boruvka_OMP_v1(G); 
     end = high_resolution_clock::now(); 
     auto boruvka_omp_duration = duration_cast<microseconds>(end-start);
 
