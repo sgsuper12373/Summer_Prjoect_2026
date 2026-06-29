@@ -167,13 +167,36 @@ int main(int argc, char* argv[]) {
     cout << "Runs per version: " << N_RUNS << "\n";
     cout << "--------------------------------------------------\n";
 
-    // Each version: a CSV label and a callable returning the MST weight.
+    // Each version: a CSV column label and a callable returning the MST weight.
     vector<pair<const char*, function<long long(ECLgraph)>>> methods = {
         { "serial_full",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_full_cpu>(g);  } },
         { "serial_half",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_half_cpu>(g);  } },
         { "serial_split", [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_split_cpu>(g); } },
         { "omp_half",     [](ECLgraph g){ return boruvka_omp<DSU_half_omp>(g);             } },
     };
+    const int M = (int)methods.size();
+
+    // time_us[v][r] = time of version v on run r; weight is the same for every
+    // version on a given run (kept once per run for the shared 'weight' column).
+    vector<vector<long long>> time_us(M, vector<long long>(N_RUNS, 0));
+    vector<long long> run_weight(N_RUNS, 0);
+
+    // No warm-up: every run is recorded so the median is taken over raw runs
+    // (the cold first run is just one of N, and the median ignores it).
+    for (int v = 0; v < M; v++) {
+        for (int r = 0; r < N_RUNS; r++) {
+            auto start = high_resolution_clock::now();
+            long long weight = methods[v].second(G);
+            auto end = high_resolution_clock::now();
+            long long us = duration_cast<microseconds>(end - start).count();
+
+            time_us[v][r]  = us;
+            run_weight[r]  = weight;   // identical across versions
+            cout << left << setw(14) << methods[v].first
+                 << "run " << right << setw(2) << (r + 1)
+                 << "  " << setw(9) << us << " us\n";
+        }
+    }
 
     ofstream csv(csv_path);
     if (!csv) {
@@ -181,28 +204,20 @@ int main(int argc, char* argv[]) {
         freeECLgraph(G);
         return 1;
     }
-    csv << "version,run,time_us,mst_weight\n";
-
-    // No warm-up: every run is recorded so the median is taken over raw runs
-    // (the cold first run is just one of N, and the median ignores it).
-    for (auto& m : methods) {
-        for (int run = 1; run <= N_RUNS; run++) {
-            auto start = high_resolution_clock::now();
-            long long weight = m.second(G);
-            auto end = high_resolution_clock::now();
-            long long us = duration_cast<microseconds>(end - start).count();
-
-            csv << m.first << "," << run << "," << us << "," << weight << "\n";
-            cout << left << setw(14) << m.first
-                 << "run " << right << setw(2) << run
-                 << "  " << setw(9) << us << " us\n";
-        }
+    // Header: run_no,weight,<one column per version>
+    csv << "run_no,weight";
+    for (auto& m : methods) csv << "," << m.first;
+    csv << "\n";
+    for (int r = 0; r < N_RUNS; r++) {
+        csv << (r + 1) << "," << run_weight[r];
+        for (int v = 0; v < M; v++) csv << "," << time_us[v][r];
+        csv << "\n";
     }
     csv.close();
 
     cout << "--------------------------------------------------\n";
-    cout << "Wrote " << methods.size() * N_RUNS << " rows to " << csv_path << "\n";
-    cout << "CSV columns: version,run,time_us,mst_weight\n";
+    cout << "Wrote " << N_RUNS << " rows to " << csv_path << "\n";
+    cout << "CSV columns: run_no,weight,serial_full,serial_half,serial_split,omp_half\n";
 
     freeECLgraph(G);
     return 0;
