@@ -281,13 +281,14 @@ public:
         }
 
         while(true){
-            int p = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
-            if( p == u ) return u; 
-            
-            int gp = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
+            int p = __atomic_load_n(&parent[u], __ATOMIC_RELAXED);
+            if( p == u ) return u;
 
-            __atomic_compare_exchange_n(&parent[u],&p, gp, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED); 
-            u = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
+            int gp = __atomic_load_n(&parent[p], __ATOMIC_RELAXED); // grandparent: path halving
+            if( gp == p ) return p; // p is the root
+
+            __atomic_compare_exchange_n(&parent[u],&p, gp, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+            u = gp;
         }
     }
 
@@ -317,7 +318,12 @@ public:
     }
 
 
-    bool isInSae
+    bool isInSameComp( int u, int v ) override{
+        if( G_find(u) == G_find(v) ){
+            return 1; 
+        }
+        return 0 ; 
+    } 
     
 
 }; 

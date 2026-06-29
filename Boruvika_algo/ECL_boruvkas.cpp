@@ -87,10 +87,10 @@ int Boruvka_CPU(ECLgraph G) {
 }
 
 
-template <typename DSU_type> 
-int boruvka_omp( ECLgraph G ){
-    DSU_type dsu(G.nodes); 
-    int MST_Weight = 0; 
+template <typename DSU_type>
+long long boruvka_omp( ECLgraph G ){
+    DSU_type dsu(G.nodes);
+    long long MST_Weight = 0;
     int prev_comps = INT_MAX; 
     int curr_comps = G.nodes; 
 
@@ -146,51 +146,64 @@ int boruvka_omp( ECLgraph G ){
 }
 
 void print_usage() {
-    cerr << "USAGE: ./ecl_boruvkas <filename> <dsu_type>\n"; 
-    cerr << "dsu_type can be: full, half, split\n";
+    cerr << "USAGE: ./ecl_boruvkas <filename> [output_csv]\n";
+    cerr << "Runs serial (full/half/split) and OMP Boruvka N times each and writes\n";
+    cerr << "per-run timings to a CSV (default: boruvka_timings.csv).\n";
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
+    if (argc < 2) {
         print_usage();
-        return 1; 
-    }
-
-    ECLgraph G = readECLgraph(argv[1]); 
-    string dsu_type = argv[2];
-
-    cout << "\nMST weight for the " << argv[1] << "\n"; 
-    cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n"; 
-    cout << "DSU Type: " << dsu_type << "\n";
-    cout << "--------------------------------------------------\n";
-
-    auto start = high_resolution_clock::now();
-    int mst_weight = 0;
-
-    // Dispatch to the correct template instantiation based on command line argument
-    if (dsu_type == "full") {
-        mst_weight = Boruvka_CPU<DSU_full_cpu>(G);
-    } else if (dsu_type == "half") {
-        mst_weight = Boruvka_CPU<DSU_half_cpu>(G);
-    } else if (dsu_type == "split") {
-        mst_weight = Boruvka_CPU<DSU_split_cpu>(G);
-    }else if (dsu_type == "omp_split"){
-        mst_weight = boruvka_omp<DSU_half_omp>(G); 
-    } 
-    else {
-        cerr << "Error: Unknown DSU type '" << dsu_type << "'. Please choose from: full, half, split.\n";
-        freeECLgraph(G);
         return 1;
     }
 
-    auto end = high_resolution_clock::now(); 
-    auto duration = duration_cast<microseconds>(end - start); 
-    
-    cout << "BORUVKA CPU - " << dsu_type << " PATH COMPRESSION\n" ; 
-    cout << "\t MST weight: " << mst_weight << "\n"; 
-    cout << "\t Computation time: " << duration.count() << " us\n" ; 
+    ECLgraph G = readECLgraph(argv[1]);
+    const char* csv_path = (argc >= 3) ? argv[2] : "boruvka_timings.csv";
+    const int N_RUNS = 10;
+
+    cout << "\nMST benchmark for " << argv[1] << "\n";
+    cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n";
+    cout << "OMP threads: " << omp_get_max_threads() << "\n";
+    cout << "Runs per version: " << N_RUNS << "\n";
     cout << "--------------------------------------------------\n";
 
-    freeECLgraph(G); 
-    return 0; 
+    // Each version: a CSV label and a callable returning the MST weight.
+    vector<pair<const char*, function<long long(ECLgraph)>>> methods = {
+        { "serial_full",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_full_cpu>(g);  } },
+        { "serial_half",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_half_cpu>(g);  } },
+        { "serial_split", [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_split_cpu>(g); } },
+        { "omp_half",     [](ECLgraph g){ return boruvka_omp<DSU_half_omp>(g);             } },
+    };
+
+    ofstream csv(csv_path);
+    if (!csv) {
+        cerr << "ERROR: could not open CSV file '" << csv_path << "' for writing\n";
+        freeECLgraph(G);
+        return 1;
+    }
+    csv << "version,run,time_us,mst_weight\n";
+
+    // No warm-up: every run is recorded so the median is taken over raw runs
+    // (the cold first run is just one of N, and the median ignores it).
+    for (auto& m : methods) {
+        for (int run = 1; run <= N_RUNS; run++) {
+            auto start = high_resolution_clock::now();
+            long long weight = m.second(G);
+            auto end = high_resolution_clock::now();
+            long long us = duration_cast<microseconds>(end - start).count();
+
+            csv << m.first << "," << run << "," << us << "," << weight << "\n";
+            cout << left << setw(14) << m.first
+                 << "run " << right << setw(2) << run
+                 << "  " << setw(9) << us << " us\n";
+        }
+    }
+    csv.close();
+
+    cout << "--------------------------------------------------\n";
+    cout << "Wrote " << methods.size() * N_RUNS << " rows to " << csv_path << "\n";
+    cout << "CSV columns: version,run,time_us,mst_weight\n";
+
+    freeECLgraph(G);
+    return 0;
 }
