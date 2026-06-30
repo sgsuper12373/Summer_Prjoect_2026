@@ -23,7 +23,7 @@ MST weight: `262559014`
 | serial_half | 42,602 | 1.17× |
 | serial_split | 46,956 | 1.06× |
 | omp_half | 11,314 | 4.41× |
-
+ 
 ## USA-road-d.USA
 
 MST weight: `60109136592`
