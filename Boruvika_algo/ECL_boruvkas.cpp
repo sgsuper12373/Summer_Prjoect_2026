@@ -2,9 +2,11 @@
 #include "ECLgraph.h"
 #include "DSU_datastructures.hpp"
 #include <chrono>
+#include <filesystem>
 
 using namespace std;
 using namespace std::chrono;
+namespace fs = std::filesystem;
 
 /**
  * @brief Used for finding atmoic min of long long int
@@ -150,9 +152,10 @@ long long boruvka_omp( ECLgraph G ){
 
 
 void print_usage() {
-    cerr << "USAGE: ./ecl_boruvkas <filename> [output_csv]\n";
+    cerr << "USAGE: ./ecl_boruvkas <filename> [results_dir]\n";
     cerr << "Runs serial (full/half/split) and OMP Boruvka N times each and writes\n";
-    cerr << "per-run timings to a CSV (default: boruvka_timings.csv).\n";
+    cerr << "per-run timings to <results_dir>/<testfile>_result.csv\n";
+    cerr << "(results_dir defaults to 'Results').\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -162,7 +165,15 @@ int main(int argc, char* argv[]) {
     }
 
     ECLgraph G = readECLgraph(argv[1]);
-    const char* csv_path = (argc >= 3) ? argv[2] : "boruvka_timings.csv";
+
+    // Build the output path: <results_dir>/<testfile>_result.csv
+    // results_dir defaults to "Results" and is created if it does not exist.
+    fs::path results_dir = (argc >= 3) ? fs::path(argv[2]) : fs::path("Results");
+    fs::create_directories(results_dir);
+    string stem = fs::path(argv[1]).stem().string(); // test file name without dir/extension
+    fs::path csv_file = results_dir / (stem + "_result.csv");
+    string csv_path_str = csv_file.string();
+    const char* csv_path = csv_path_str.c_str();
     const int N_RUNS = 10;
 
     cout << "\nMST benchmark for " << argv[1] << "\n";

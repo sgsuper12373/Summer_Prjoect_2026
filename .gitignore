@@ -42,4 +42,6 @@
 __pycache__/
 *.py[cod]
 
-/Boruika_algo/tests/
+# Large benchmark graph inputs — never push these
+/Boruvika_algo/tests/
+*.egr
