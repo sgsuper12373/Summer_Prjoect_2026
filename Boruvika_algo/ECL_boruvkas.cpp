@@ -123,8 +123,10 @@ long long boruvka_omp( ECLgraph G ){
         }
 
         // PHASE_2: merge comps
-
-        #pragma omp parallel for schedule(guided)
+        // Accumulate via reductions instead of atomics on shared counters.
+        long long roundW = 0;
+        int merges = 0;
+        #pragma omp parallel for schedule(guided) reduction(+:roundW) reduction(+:merges)
         for( int c = 0 ; c <  G.nodes; c++ ){
             if( cheapest[c] == INF ) continue;
 
@@ -133,17 +135,19 @@ long long boruvka_omp( ECLgraph G ){
             int v = G.nlist[i];
 
             if( dsu.G_union(c, v) ) {
-                #pragma omp atomic
-                MST_Weight+=w; 
-                #pragma omp atomic
-                curr_comps--; 
+                roundW += w;
+                merges++;
             }
         }
+        MST_Weight += roundW;
+        curr_comps -= merges;
 
     }
 
     return MST_Weight; 
 }
+
+
 
 void print_usage() {
     cerr << "USAGE: ./ecl_boruvkas <filename> [output_csv]\n";
