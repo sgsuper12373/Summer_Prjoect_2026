@@ -41,3 +41,5 @@
 # Compiled Python files (if any tools/scripts exist)
 __pycache__/
 *.py[cod]
+
+/Boruika_algo/tests/
