@@ -1,3 +1,17 @@
+/**
+ * 
+ * vary the number of threads => (2,4,8,12,16)
+ * schedule => (static -> with atleast 3 diffrent size based on cache size, dyanmic -> try with 2-3 chunk size)
+ * 
+ * Identify where all reduandant work is done, mainly the parallelized loops. 
+ * Test with some baseline published source code, preferabily for multicore CPU
+ * Time different phases of the algorithms. 
+ * check how many number of iteration of while loop are being done
+ * 
+ * Performace checks for each phase, study access patterns, 
+ * 
+ */
+
 #include<bits/stdc++.h>
 #include "ECLgraph.h"
 #include "DSU_datastructures.hpp"
@@ -43,7 +57,7 @@ int Boruvka_CPU(ECLgraph G) {
         // PHASE_0: flatten component ids once and reset cheapest
         for( int u = 0 ; u < G.nodes; u++ ){
             comp[u] = dsu.G_find(u);
-            cheapest[u] = -1;
+            cheapest[u] = INT_MAX;
         }
 
         // PHASE_1:  find the cheapest outgoing edge per component
@@ -55,7 +69,7 @@ int Boruvka_CPU(ECLgraph G) {
 
                 if( ult_u == comp[v] ) continue; // same comp, skip
 
-                if( cheapest[ult_u] == -1 || w < G.eweight[ cheapest[ult_u] ] ){
+                if( cheapest[ult_u] == INT_MAX || w < G.eweight[ cheapest[ult_u] ] ){
                     cheapest[ult_u] = i ;
                 }
             }
@@ -64,7 +78,7 @@ int Boruvka_CPU(ECLgraph G) {
         // PHASE_2: merge comps
 
         for( int u = 0 ; u <  G.nodes; u++ ){
-            if( cheapest[u] == -1 ) continue;
+            if( cheapest[u] == INT_MAX ) continue;
 
             int i = cheapest[u];
             int v = G.nlist[i];
@@ -72,9 +86,6 @@ int Boruvka_CPU(ECLgraph G) {
 
             int ult_u = dsu.G_find(u);
             int ult_v = dsu.G_find(v);
-
-            // int ult_u = comp[u]; 
-            // int ult_v = comp[v]; 
 
             if( ult_u == ult_v ) continue;
 
@@ -103,7 +114,8 @@ long long boruvka_omp( ECLgraph G ){
     while( prev_comps != curr_comps  ){
         prev_comps = curr_comps;
 
-        // PHASE_0: flatten component ids and reset cheapest ( read-only find )
+        // PHASE_0: flatten component ids and reset cheapest 
+
         #pragma omp parallel for schedule(static)
         for( int u = 0 ; u < G.nodes; u++ ){
             comp[u] = dsu.G_find(u);

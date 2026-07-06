@@ -14,6 +14,7 @@ MST weight: `2806989831`
 | omp_half | 61,242 | 4.78× |
 
 ## USA-road-d.NY
+### Road-Network Graph
 
 MST weight: `262559014`
 
@@ -25,6 +26,7 @@ MST weight: `262559014`
 | omp_half | 11,314 | 4.41× |
  
 ## USA-road-d.USA
+### Road-Network Graph
 
 MST weight: `60109136592`
 
@@ -36,6 +38,7 @@ MST weight: `60109136592`
 | omp_half | 1,235,838 | 3.98× |
 
 ## internet
+### internet topology ( Powerlaw distribution)
 
 MST weight: `951569`
 
@@ -68,7 +71,8 @@ MST weight: `12284371526`
 | serial_split | 7,487,150 | 0.94× |
 | omp_half | 2,135,417 | 3.29× |
 
-## rmat16.sym
+## rmat16.sym 
+### Followes the powerlaw Distribution
 
 MST weight: `693935344`
 
@@ -79,7 +83,8 @@ MST weight: `693935344`
 | serial_split | 26,290 | 1.03× |
 | omp_half | 5,676 | 4.76× |
 
-## rmat22.sym
+## rmat22.sym 
+### Followes the powerlaw Distribution
 
 MST weight: `3007276592424`
 
