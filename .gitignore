@@ -45,3 +45,7 @@ __pycache__/
 # Large benchmark graph inputs — never push these
 /Boruvika_algo/tests/
 *.egr
+
+# Results of the tests
+/Boruvika_algo/Results/ 
+*.csv
