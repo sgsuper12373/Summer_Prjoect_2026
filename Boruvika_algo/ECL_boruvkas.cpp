@@ -42,7 +42,10 @@ static timed_phases phase_timer;
 
 /**
  * @brief Used for finding atmoic min of long long int
- * actully for givien implemntaion it is used to compare upper 32 bits and lower 32 bits are used for tie breaking 
+ * actully for givien implemntaion it is used to compare upper 32 bits which are used for choosing 
+ * minimum outogin edge,  and lower 32 bits are used for tie breaking 
+ * 
+ * @note
  * 
  * @param addr 
  * @param val 
@@ -214,7 +217,7 @@ int main(int argc, char* argv[]) {
     fs::path csv_file = results_dir / (stem + "_result.csv");
     string csv_path_str = csv_file.string();
     const char* csv_path = csv_path_str.c_str();
-    const int N_RUNS = 10;
+    const int N_RUNS = 9;
 
     cout << "\nMST benchmark for " << argv[1] << "\n";
     cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n";

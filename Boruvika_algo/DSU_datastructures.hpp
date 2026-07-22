@@ -290,6 +290,14 @@ class DSU_half_omp: public DSU{
 public: 
     DSU_half_omp( int N ) : DSU(N) {}
 
+    /**
+     * @brief find the parent of node u atomically and return it. while finding parent it is also doing the half path compression routie
+     * @note  atmoically find the parent of u, atomically find the grandparent of u i.e parent[parent[u]] then current node points to 
+     *        the grandparent and new find node is grandparent. parent is totally untouched. 
+     * 
+     * @param u 
+     * @return int 
+     */
     int G_find( int u ) override {
 
         if( !isValidNode(u) ){
