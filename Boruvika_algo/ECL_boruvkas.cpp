@@ -22,6 +22,24 @@ using namespace std;
 using namespace std::chrono;
 namespace fs = std::filesystem;
 
+
+
+struct timed_phases{
+    double phase0  = 0.0 ; // us: flatten component ids + reset cheapest
+    double phase1  = 0.0 ; // us: find cheapest outgoing edge per component
+    double phase2  = 0.0 ; // us: merge components
+    long long iterations = 0 ; // number of while-loop passes
+
+    void reset_timer(){
+        phase0 = 0.0;
+        phase1 = 0.0;
+        phase2 = 0.0;
+        iterations = 0;
+    }
+};
+
+static timed_phases phase_timer; 
+
 /**
  * @brief Used for finding atmoic min of long long int
  * actully for givien implemntaion it is used to compare upper 32 bits and lower 32 bits are used for tie breaking 
@@ -40,7 +58,7 @@ static inline void atomicMinU64( unsigned long long* addr, unsigned long long va
 
 // Template function for Boruvka's algorithm, accepting the DSU type
 template <typename DSU_Type>
-int Boruvka_CPU(ECLgraph G) {
+int Boruvka_CPU(ECLgraph G )  {
     // Instantiate the specified DSU structure
     DSU_Type dsu(G.nodes);
     
@@ -101,7 +119,7 @@ int Boruvka_CPU(ECLgraph G) {
 
 
 template <typename DSU_type>
-long long boruvka_omp( ECLgraph G ){
+long long boruvka_omp( ECLgraph G) {
     DSU_type dsu(G.nodes);
     long long MST_Weight = 0;
     int prev_comps = INT_MAX; 
@@ -113,16 +131,23 @@ long long boruvka_omp( ECLgraph G ){
 
     while( prev_comps != curr_comps  ){
         prev_comps = curr_comps;
+        phase_timer.iterations++;
 
-        // PHASE_0: flatten component ids and reset cheapest 
+        // PHASE_0: flatten component ids and reset cheapest
 
+        auto start = high_resolution_clock::now();
         #pragma omp parallel for schedule(static)
         for( int u = 0 ; u < G.nodes; u++ ){
             comp[u] = dsu.G_find(u);
             cheapest[u] = INF;
         }
+        auto end = high_resolution_clock::now(); 
+        phase_timer.phase0 += duration_cast<microseconds>(end - start).count();
 
-        // PHASE_1:  find the cheapest outgoing edge per component 
+        
+
+        // PHASE_1:  find the cheapest outgoing edge per component
+        start = high_resolution_clock::now();
         #pragma omp parallel for schedule(guided)
         for( int u = 0 ; u < G.nodes; u++ ){
             int ult_u = comp[u];
@@ -135,11 +160,15 @@ long long boruvka_omp( ECLgraph G ){
                 atomicMinU64(&cheapest[ult_u], key);
             }
         }
+        end = high_resolution_clock::now(); 
+        phase_timer.phase1 += duration_cast<microseconds>(end - start).count();
 
         // PHASE_2: merge comps
         // Accumulate via reductions instead of atomics on shared counters.
         long long roundW = 0;
         int merges = 0;
+
+        start = high_resolution_clock::now();
         #pragma omp parallel for schedule(guided) reduction(+:roundW) reduction(+:merges)
         for( int c = 0 ; c <  G.nodes; c++ ){
             if( cheapest[c] == INF ) continue;
@@ -153,6 +182,9 @@ long long boruvka_omp( ECLgraph G ){
                 merges++;
             }
         }
+        end = high_resolution_clock::now();
+        phase_timer.phase2 += duration_cast<microseconds>(end - start).count();
+
         MST_Weight += roundW;
         curr_comps -= merges;
 
@@ -208,10 +240,15 @@ int main(int argc, char* argv[]) {
     vector<vector<long long>> time_us(M, vector<long long>(N_RUNS, 0));
     vector<long long> run_weight(N_RUNS, 0);
 
+    // Per-run phase breakdown for the OMP version (phases are only timed there).
+    struct phase_row { double p0, p1, p2; long long iters; };
+    vector<phase_row> omp_phases(N_RUNS, {0, 0, 0, 0});
+
     // No warm-up: every run is recorded so the median is taken over raw runs
     // (the cold first run is just one of N, and the median ignores it).
     for (int v = 0; v < M; v++) {
         for (int r = 0; r < N_RUNS; r++) {
+            phase_timer.reset_timer(); 
             auto start = high_resolution_clock::now();
             long long weight = methods[v].second(G);
             auto end = high_resolution_clock::now();
@@ -221,7 +258,21 @@ int main(int argc, char* argv[]) {
             run_weight[r]  = weight;   // identical across versions
             cout << left << setw(14) << methods[v].first
                  << "run " << right << setw(2) << (r + 1)
-                 << "  " << setw(9) << us << " us\n";
+                 << "  " << setw(9) << us << " us";
+
+            // Only the OMP version times individual phases (iterations > 0).
+            if (phase_timer.iterations > 0) {
+                omp_phases[r] = { phase_timer.phase0, phase_timer.phase1,
+                                  phase_timer.phase2, phase_timer.iterations };
+                double total = phase_timer.phase0 + phase_timer.phase1 + phase_timer.phase2;
+                double denom = (total > 0.0) ? total : 1.0;
+                cout << "  [iters " << phase_timer.iterations << "]"
+                     << " p0 " << setw(8) << (long long)phase_timer.phase0 << " us (" << setw(5) << fixed << setprecision(1) << 100.0 * phase_timer.phase0 / denom << "%)"
+                     << " p1 " << setw(8) << (long long)phase_timer.phase1 << " us (" << setw(5) << fixed << setprecision(1) << 100.0 * phase_timer.phase1 / denom << "%)"
+                     << " p2 " << setw(8) << (long long)phase_timer.phase2 << " us (" << setw(5) << fixed << setprecision(1) << 100.0 * phase_timer.phase2 / denom << "%)";
+                cout.unsetf(ios::fixed);
+            }
+            cout << "\n";
         }
     }
 
@@ -245,6 +296,24 @@ int main(int argc, char* argv[]) {
     cout << "--------------------------------------------------\n";
     cout << "Wrote " << N_RUNS << " rows to " << csv_path << "\n";
     cout << "CSV columns: run_no,weight,serial_full,serial_half,serial_split,omp_half\n";
+
+    // Per-phase timing for the OMP version: <testfile>_phases.csv
+    fs::path phase_file = results_dir / (stem + "_phases.csv");
+    ofstream pcsv(phase_file.string());
+    if (pcsv) {
+        pcsv << "run_no,iterations,phase0_us,phase1_us,phase2_us\n";
+        for (int r = 0; r < N_RUNS; r++) {
+            pcsv << (r + 1) << "," << omp_phases[r].iters << ","
+                 << (long long)omp_phases[r].p0 << ","
+                 << (long long)omp_phases[r].p1 << ","
+                 << (long long)omp_phases[r].p2 << "\n";
+        }
+        pcsv.close();
+        cout << "Wrote OMP phase timings to " << phase_file.string() << "\n";
+        cout << "phase0=flatten+reset, phase1=find cheapest edge, phase2=merge comps\n";
+    } else {
+        cerr << "WARNING: could not open phase CSV '" << phase_file.string() << "' for writing\n";
+    }
 
     freeECLgraph(G);
     return 0;
