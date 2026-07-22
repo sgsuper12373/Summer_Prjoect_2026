@@ -15,24 +15,27 @@ g++ -O3 -fopenmp -std=c++17 "${SRC}" -o "${BIN}"
 
 mkdir -p "${RESULTS_DIR}"
 
-shopt -s nullglob
-files=("${TESTS_DIR}"/*.egr)
-shopt -u nullglob
+file="${TESTS_DIR}/internet.egr"
 
-if [[ ${#files[@]} -eq 0 ]]; then
-    echo "No .egr files found in ${TESTS_DIR}"
+if [[ ! -f "$file" ]]; then
+    echo "File $file not found!"
     exit 1
 fi
 
-echo "Found ${#files[@]} test file(s) in ${TESTS_DIR}"
+echo "Running tests on ${file}"
 echo "=================================================="
 
-for file in "${files[@]}"; do
-    echo ""
-    echo ">>> Running on: ${file}"
-    "${BIN}" "${file}" "${RESULTS_DIR}"
+threads=(1 2 3 4 8 16)
+chunks=(12 16 20)
+
+for t in "${threads[@]}"; do
+    for c in "${chunks[@]}"; do
+        echo ""
+        echo ">>> Running on: ${file} (threads=${t}, chunk_size=${c})"
+        "${BIN}" "${file}" -n ${t} -p0 ${c}
+    done
 done
 
 echo ""
 echo "=================================================="
-echo "All tests done. CSV results are in ${RESULTS_DIR}/"
+echo "All tests done. CSV results are stored in the default results directory."

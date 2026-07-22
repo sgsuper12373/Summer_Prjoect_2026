@@ -3,9 +3,9 @@
  * vary the number of threads => (2,4,8,12,16)
  * schedule => (static -> with atleast 3 diffrent size based on cache size, dyanmic -> try with 2-3 chunk size)
  * 
- * Identify where all reduandant work is done, mainly the parallelized loops. 
+ * Identify where all reduandant work is done, mainly the parallelized loops
  * Test with some baseline published source code, preferabily for multicore CPU
- * Time different phases of the algorithms. 
+ * Time different phases of the algorithms. -> Done
  * check how many number of iteration of while loop are being done
  * 
  * Performace checks for each phase, study access patterns, 
@@ -13,6 +13,7 @@
  */
 
 #include<bits/stdc++.h>
+#include <omp.h>
 #include "ECLgraph.h"
 #include "DSU_datastructures.hpp"
 #include <chrono>
@@ -118,7 +119,7 @@ int Boruvka_CPU(ECLgraph G )  {
 
 
 template <typename DSU_type>
-long long boruvka_omp( ECLgraph G) {
+long long boruvka_omp( ECLgraph G, int chunk_size) {
     DSU_type dsu(G.nodes);
     long long MST_Weight = 0;
     int prev_comps = INT_MAX; 
@@ -133,9 +134,13 @@ long long boruvka_omp( ECLgraph G) {
         phase_timer.iterations++;
 
         // PHASE_0: flatten component ids and reset cheapest
-
+        /*
+            cache line is 64bytes and I am storing integers in both comp and cheapes array 
+            hence one cache line can have 64 / 4 -> 16 elements 
+            hence schedule(static,16) would help to reduce the false sharing.....
+        */
         auto start = high_resolution_clock::now();
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static,chunk_size)
         for( int u = 0 ; u < G.nodes; u++ ){
             comp[u] = dsu.G_find(u);
             cheapest[u] = INF;
@@ -146,6 +151,13 @@ long long boruvka_omp( ECLgraph G) {
         
 
         // PHASE_1:  find the cheapest outgoing edge per component
+        /*
+            Why Guided suites here best? 
+                the work for each thread will be irregualr. based on graph propery we will 
+                have the different degree of nodes. some nodes may have higher degree and some might low
+                so this is irregular type of work. hence dynamic would work here best I guess because
+                dynmic will get more scheduling overhead due to scheduling 
+        */
         start = high_resolution_clock::now();
         #pragma omp parallel for schedule(guided)
         for( int u = 0 ; u < G.nodes; u++ ){
@@ -195,10 +207,11 @@ long long boruvka_omp( ECLgraph G) {
 
 
 void print_usage() {
-    cerr << "USAGE: ./ecl_boruvkas <filename> [results_dir]\n";
+    cerr << "USAGE: ./ecl_boruvkas <filename> [results_dir] [-n <threads>] [-p0 <chunk_size>]\n";
     cerr << "Runs serial (full/half/split) and OMP Boruvka N times each and writes\n";
     cerr << "per-run timings to <results_dir>/<testfile>_result.csv\n";
-    cerr << "(results_dir defaults to 'Results').\n";
+    cerr << "(results_dir defaults to '/home/sumitgarad/Documents/GitHub/Summer_Prjoect_2026/Boruvika_algo/Results').\n";
+    cerr << "If -p0 is not provided, reads from CHUNK_SIZE environment variable.\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -207,30 +220,57 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    ECLgraph G = readECLgraph(argv[1]);
+    int num_threads = omp_get_max_threads();
+    int chunk_size = 16;
+    if (const char* env_p0 = getenv("CHUNK_SIZE")) {
+        chunk_size = atoi(env_p0);
+    }
 
-    // Build the output path: <results_dir>/<testfile>_result.csv
-    // results_dir defaults to "Results" and is created if it does not exist.
-    fs::path results_dir = (argc >= 3) ? fs::path(argv[2]) : fs::path("Results");
+    fs::path results_dir = fs::path("/home/sumitgarad/Documents/GitHub/Summer_Prjoect_2026/Boruvika_algo/Results");
+    string filename = argv[1];
+
+    for (int i = 2; i < argc; i++) {
+        string arg = argv[i];
+        if (arg == "-n" && i + 1 < argc) {
+            num_threads = atoi(argv[++i]);
+        } else if (arg == "-p0" && i + 1 < argc) {
+            chunk_size = atoi(argv[++i]);
+        } else if (arg[0] != '-') {
+            results_dir = fs::path(arg);
+        } else {
+            cerr << "Unknown argument: " << arg << "\n";
+        }
+    }
+
+    omp_set_num_threads(num_threads);
+
+    ECLgraph G = readECLgraph(filename.c_str());
+
     fs::create_directories(results_dir);
-    string stem = fs::path(argv[1]).stem().string(); // test file name without dir/extension
+    string stem = fs::path(filename).stem().string(); // test file name without dir/extension
     fs::path csv_file = results_dir / (stem + "_result.csv");
     string csv_path_str = csv_file.string();
     const char* csv_path = csv_path_str.c_str();
     const int N_RUNS = 9;
 
-    cout << "\nMST benchmark for " << argv[1] << "\n";
+    cout << "\nMST benchmark for " << filename << "\n";
     cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n";
-    cout << "OMP threads: " << omp_get_max_threads() << "\n";
+    cout << "OMP threads: " << num_threads << "\n";
+    cout << "Chunk size: " << chunk_size << "\n";
     cout << "Runs per version: " << N_RUNS << "\n";
     cout << "--------------------------------------------------\n";
 
     // Each version: a CSV column label and a callable returning the MST weight.
+    // vector<pair<const char*, function<long long(ECLgraph)>>> methods = {
+    //     { "serial_full",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_full_cpu>(g);  } },
+    //     { "serial_half",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_half_cpu>(g);  } },
+    //     { "serial_split", [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_split_cpu>(g); } },
+    //     { "omp_half",     [](ECLgraph g){ return boruvka_omp<DSU_half_omp>(g);             } },
+    // };
+
     vector<pair<const char*, function<long long(ECLgraph)>>> methods = {
-        { "serial_full",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_full_cpu>(g);  } },
         { "serial_half",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_half_cpu>(g);  } },
-        { "serial_split", [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_split_cpu>(g); } },
-        { "omp_half",     [](ECLgraph g){ return boruvka_omp<DSU_half_omp>(g);             } },
+        { "omp_half",     [chunk_size](ECLgraph g){ return boruvka_omp<DSU_half_omp>(g, chunk_size);             } },
     };
     const int M = (int)methods.size();
 
@@ -275,40 +315,62 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    ofstream csv(csv_path);
+    // Compute medians
+    vector<long long> medians(M);
+    for (int v = 0; v < M; v++) {
+        vector<long long> sorted_times = time_us[v];
+        sort(sorted_times.begin(), sorted_times.end());
+        medians[v] = sorted_times[N_RUNS / 2];
+    }
+    long long final_weight = run_weight[0];
+
+    auto phase_cmp = [](const phase_row& a, const phase_row& b) {
+        return (a.p0 + a.p1 + a.p2) < (b.p0 + b.p1 + b.p2);
+    };
+    vector<phase_row> sorted_phases = omp_phases;
+    sort(sorted_phases.begin(), sorted_phases.end(), phase_cmp);
+    phase_row median_phase = sorted_phases[N_RUNS / 2];
+
+    bool write_header = true;
+    if (fs::exists(csv_file)) write_header = (fs::file_size(csv_file) == 0);
+    
+    ofstream csv(csv_path, ios::app);
     if (!csv) {
         cerr << "ERROR: could not open CSV file '" << csv_path << "' for writing\n";
         freeECLgraph(G);
         return 1;
     }
-    // Header: run_no,weight,<one column per version>
-    csv << "run_no,weight";
-    for (auto& m : methods) csv << "," << m.first;
-    csv << "\n";
-    for (int r = 0; r < N_RUNS; r++) {
-        csv << (r + 1) << "," << run_weight[r];
-        for (int v = 0; v < M; v++) csv << "," << time_us[v][r];
+    if (write_header) {
+        csv << "graph,threads,chunk_size_p0,weight";
+        for (auto& m : methods) csv << "," << m.first;
         csv << "\n";
     }
+    csv << stem << "," << num_threads << "," << chunk_size << "," << final_weight;
+    for (int v = 0; v < M; v++) csv << "," << medians[v];
+    csv << "\n";
     csv.close();
 
     cout << "--------------------------------------------------\n";
-    cout << "Wrote " << N_RUNS << " rows to " << csv_path << "\n";
-    cout << "CSV columns: run_no,weight,serial_full,serial_half,serial_split,omp_half\n";
+    cout << "Appended median result to " << csv_path << "\n";
+    cout << "CSV columns: graph,threads,chunk_size_p0,weight,serial_half,omp_half\n";
 
     // Per-phase timing for the OMP version: <testfile>_phases.csv
     fs::path phase_file = results_dir / (stem + "_phases.csv");
-    ofstream pcsv(phase_file.string());
+    bool write_phase_header = true;
+    if (fs::exists(phase_file)) write_phase_header = (fs::file_size(phase_file) == 0);
+
+    ofstream pcsv(phase_file.string(), ios::app);
     if (pcsv) {
-        pcsv << "run_no,iterations,phase0_us,phase1_us,phase2_us\n";
-        for (int r = 0; r < N_RUNS; r++) {
-            pcsv << (r + 1) << "," << omp_phases[r].iters << ","
-                 << (long long)omp_phases[r].p0 << ","
-                 << (long long)omp_phases[r].p1 << ","
-                 << (long long)omp_phases[r].p2 << "\n";
+        if (write_phase_header) {
+            pcsv << "graph,threads,chunk_size_p0,iterations,phase0_us,phase1_us,phase2_us\n";
         }
+        pcsv << stem << "," << num_threads << "," << chunk_size << "," 
+             << median_phase.iters << ","
+             << (long long)median_phase.p0 << ","
+             << (long long)median_phase.p1 << ","
+             << (long long)median_phase.p2 << "\n";
         pcsv.close();
-        cout << "Wrote OMP phase timings to " << phase_file.string() << "\n";
+        cout << "Appended median OMP phase timings to " << phase_file.string() << "\n";
         cout << "phase0=flatten+reset, phase1=find cheapest edge, phase2=merge comps\n";
     } else {
         cerr << "WARNING: could not open phase CSV '" << phase_file.string() << "' for writing\n";
