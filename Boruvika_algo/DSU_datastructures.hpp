@@ -40,10 +40,24 @@ public:
     virtual bool G_union( int u, int v) = 0 ; 
     virtual bool isInSameComp( int u, int v ) = 0 ; 
 
+    /**
+     * @brief Get the Parent array
+     * @note array is returned by reference not as copy
+     * 
+     * @return vector<int>& 
+     */
     vector<int>& getParent(){
         return parent; 
     }
 
+    /**
+     * @brief Get the size array
+     * @note for some implementation which does not use size array this
+     * method return array with all values 1. 
+     * @note array is returned by reference
+     * 
+     * @return vector<int>& 
+     */
     vector<int>& getSize(){
         return size;
     }
@@ -62,7 +76,7 @@ public:
     /**
      * @brief full path compression implemented using the recursion. 
      * @note This can also done by iterative version but I am just keeping it simple recursion
-     * 
+     * @note override is annotation for telling compiler this method is beging overridden. this is common for pure virtual functions
      * @param u 
      * @return int 
      */
@@ -82,6 +96,8 @@ public:
     /**
      * @brief unite the node u and v if they are valid
      *        return true if union is successful else false; 
+     * @note we return false if u and v are in same comp to avoid remergeing and adding edge weight again to MST
+     * @note but we aree not really uning this return in main code because in main code we are just merging comp if parents are not in same comp
      * @param u 
      * @param v 
      * @return true 
@@ -96,8 +112,8 @@ public:
         int ult_u = G_find(u); 
         int ult_v = G_find(v); 
         
-        // if in same comp return true; 
-        if( ult_u == ult_v) return 1; 
+        // if in same comp return false; 
+        if( ult_u == ult_v) return 0; 
 
         if( size[ult_u] > size[ult_v]){
             swap(ult_u, ult_v); 
@@ -155,6 +171,7 @@ public:
     /**
      * @brief unite the node u and v if they are valid
      *        return true if union is successful else false;
+     * @note we return false if both nodes are already in the same comp
      * 
      * @param u 
      * @param v 
@@ -170,8 +187,8 @@ public:
         int ult_u = G_find(u); 
         int ult_v = G_find(v); 
         
-        // if in same comp return true; 
-        if( ult_u == ult_v) return 1; 
+        // if in same comp return false; 
+        if( ult_u == ult_v) return 0; 
 
         if( size[ult_u] > size[ult_v]){
             swap(ult_u, ult_v); 
@@ -242,8 +259,8 @@ public:
         int ult_u = G_find(u); 
         int ult_v = G_find(v); 
         
-        // if in same comp return true; 
-        if( ult_u == ult_v) return 1; 
+        
+        if( ult_u == ult_v) return 0; 
 
         if( size[ult_u] > size[ult_v]){
             swap(ult_u, ult_v); 

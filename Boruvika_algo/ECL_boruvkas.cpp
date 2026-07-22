@@ -102,14 +102,10 @@ int Boruvka_CPU(ECLgraph G )  {
             int v = G.nlist[i];
             int w = G.eweight[i];
 
-            int ult_u = dsu.G_find(u);
-            int ult_v = dsu.G_find(v);
-
-            if( ult_u == ult_v ) continue;
-
-            dsu.G_union(ult_u, ult_v);
-            MST_Weight+=w;
-            curr_comps--;
+            if(dsu.G_union(u, v)){
+                MST_Weight+=w;
+                curr_comps--;
+            }
         }
 
     }
