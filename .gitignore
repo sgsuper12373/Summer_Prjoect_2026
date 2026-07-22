@@ -47,5 +47,4 @@ __pycache__/
 *.egr
 
 # Results of the tests
-/Boruvika_algo/Results/ 
-*.csv
+/Boruvika_algo/Results/*
