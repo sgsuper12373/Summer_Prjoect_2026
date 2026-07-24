@@ -1,12 +1,12 @@
 /**
  * 
- * vary the number of threads => (2,4,8,12,16)
+ * vary the number of threads => (2,4,8,12,16)  -> DONE
  * schedule => (static -> with atleast 3 diffrent size based on cache size, dyanmic -> try with 2-3 chunk size)
  * 
  * Identify where all reduandant work is done, mainly the parallelized loops
  * Test with some baseline published source code, preferabily for multicore CPU
  * Time different phases of the algorithms. -> Done
- * check how many number of iteration of while loop are being done
+ * check how many number of iteration of while loop are being done -> DONE
  * 
  * Performace checks for each phase, study access patterns, 
  * 

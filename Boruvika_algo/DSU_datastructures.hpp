@@ -352,3 +352,133 @@ public:
     
 
 }; 
+
+
+/**
+ * @brief This DSU is does path compression as saparat call (say compress)
+ * normal DSU the path compression is done with the find call but here
+ * this compression will be done saparatly.. 
+ * IDEA: 
+ *  1. with normal path compression we have three phases
+ *      - find parent of each node 
+ *      - find cheapest outgoing edge 
+ *      - merge the componets
+ *  path compressoin is done in first phases which is adds bit of synchronization overhead
+ *  so path compression as saprate call so there won't be any need of synchroniaztion in first pahse
+ *  the compress call will be done after the merge phase to reduce the tree height
+ *  here full path compression is expected so the G_find won't have to do much work. parent will be returned 
+ *  int O(1) time giving pahse 1 O(nodes) complexity which scales better with high number of threads
+ * 
+ */
+class DSU_intermediate_omp: public DSU{
+public: 
+    DSU_intermediate_omp(int N) : DSU(N){}
+
+    /**
+     * @brief Directly return the parent of node u 
+     * @note The compress call is supposed to flattten whole tree so that we get the O(1) time for find
+     * @param u 
+     * @return int 
+     */
+    int G_find( int u ) override {
+        if( !isValidNode(u) ){
+            cerr << "Erroo : invalid Node : " << u << "\n"; 
+            exit(1); 
+        }
+        return parent[u]; 
+    }
+
+    bool G_union(int u, int v ) override {
+        if( !isValidNode(u) || !isValidNode(v) ){
+            cerr << "Error : Invalid Node " << u << " OR " << v << "\n"; 
+            exit(1); 
+        }
+
+
+        while(true){
+            /* Cant use normal G_find call. need to load values atomically, G_find might return stale values */
+            // u = G_find(u); 
+            // v = G_find(v); 
+
+            u = __atomic_load_n(&parent[u],__ATOMIC_RELAXED); 
+            v = __atomic_load_n(&parent[v], __ATOMIC_RELAXED); 
+
+
+            if( u == v ) return false; 
+
+            if( u > v ) std :: swap(u,v); 
+
+            int expected = v ; 
+            if( __atomic_compare_exchange_n(&parent[v],&expected,u,false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)){
+                return true; 
+            }
+        }
+        return 0; 
+    }
+
+    bool isInSameComp(int u , int v ) {
+        return parent[u] == parent[v]; 
+    }
+
+/**
+ * @brief Atomically walk up the parent chain to find the current root of u.
+ * @note Read-only, no writes. Safe to run concurrently with other threads
+ *       doing the same walk, since parent[] only ever points closer to
+ *       (or at) the true root, even mid-compression.
+ * @param u 
+ * @return int - the root found
+ */
+int walk_to_root( int u ){
+    int cur = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
+    while( cur != __atomic_load_n(&parent[cur], __ATOMIC_RELAXED) ){
+        cur = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED); 
+    }
+    return cur; 
+}
+
+/**
+ * @brief Flattens the tree by pointing every node directly at its root.
+ * @note Each node's compression is independent - no synchronization needed
+ *       beyond atomic load/store, and the OMP implicit barrier at the end
+ *       of the parallel for ensures visibility before the next phase.
+ */
+void compress_tree() {
+    #pragma omp parallel for schedule(guided)
+    for (int u = 0; u < this->N; u++) {
+        int cur = u;
+        int p = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED);
+        
+        // Fast path: If the node is a root, or already points directly to a root, 
+        // we skip it immediately.
+        if (cur == p || p == __atomic_load_n(&parent[p], __ATOMIC_RELAXED)) {
+            continue; 
+        }
+
+        // Pass 1: Walk to find the true root
+        while (cur != p) {
+            cur = p;
+            p = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED);
+        }
+        int root = cur; 
+
+        // Pass 2: Retrace the path and point everything directly to the root
+        cur = u;
+        while (cur != root) {
+            int next = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED);
+            
+            // EARLY EXIT: If this node already points to the root, it means 
+            // another thread beat us to it, and the rest of the chain is already flat!
+            if (next == root) {
+                break; 
+            }
+            
+            // Safely write the root. If another thread writes it at the exact 
+            // same time, it's a benign race (they are writing the identical value).
+            __atomic_store_n(&parent[cur], root, __ATOMIC_RELAXED);
+            
+            cur = next;
+        }
+    }
+}
+
+}; 
