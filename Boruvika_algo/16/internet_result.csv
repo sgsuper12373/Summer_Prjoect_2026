@@ -1,0 +1,5 @@
+graph,threads,chunk_size_p0,weight,serial_half,omp_half,omp_intermediate
+internet,16,16,951569,36679,13716,14993
+internet,16,16,951569,37090,12859,15960
+internet,16,16,951569,38805,13589,16030
+internet,16,16,951569,38898,14794,17425

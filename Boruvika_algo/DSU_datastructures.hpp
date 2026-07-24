@@ -420,64 +420,87 @@ public:
         return parent[u] == parent[v]; 
     }
 
-/**
- * @brief Atomically walk up the parent chain to find the current root of u.
- * @note Read-only, no writes. Safe to run concurrently with other threads
- *       doing the same walk, since parent[] only ever points closer to
- *       (or at) the true root, even mid-compression.
- * @param u 
- * @return int - the root found
- */
-int walk_to_root( int u ){
-    int cur = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
-    while( cur != __atomic_load_n(&parent[cur], __ATOMIC_RELAXED) ){
-        cur = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED); 
+    /**
+     * @brief Atomically walk up the parent chain to find the current root of u.
+     * @note Read-only, no writes. Safe to run concurrently with other threads
+     *       doing the same walk, since parent[] only ever points closer to
+     *       (or at) the true root, even mid-compression.
+     * @param u 
+     * @return int - the root found
+     */
+    int walk_to_root( int u ){
+        int cur = __atomic_load_n(&parent[u], __ATOMIC_RELAXED); 
+        while( cur != __atomic_load_n(&parent[cur], __ATOMIC_RELAXED) ){
+            cur = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED); 
+        }
+        return cur; 
     }
-    return cur; 
-}
 
-/**
- * @brief Flattens the tree by pointing every node directly at its root.
- * @note Each node's compression is independent - no synchronization needed
- *       beyond atomic load/store, and the OMP implicit barrier at the end
- *       of the parallel for ensures visibility before the next phase.
- */
-void compress_tree() {
+    /**
+     * @brief Flattens the tree by pointing every node directly at its root.
+     * @note Each node's compression is independent - no synchronization needed
+     *       beyond atomic load/store, and the OMP implicit barrier at the end
+     *       of the parallel for ensures visibility before the next phase.
+     */
+    void compress_tree_v1() {
+        #pragma omp parallel for schedule(guided)
+        for (int u = 0; u < this->N; u++) {
+            int cur = u;
+            int p = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED);
+            
+            // Fast path: If the node is a root, or already points directly to a root, 
+            // we skip it immediately.
+            if (cur == p || p == __atomic_load_n(&parent[p], __ATOMIC_RELAXED)) {
+                continue; 
+            }
+
+            // Pass 1: Walk to find the true root
+            while (cur != p) {
+                cur = p;
+                p = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED);
+            }
+            int root = cur; 
+
+            // Pass 2: Retrace the path and point everything directly to the root
+            cur = u;
+            while (cur != root) {
+                int next = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED);
+                
+                // EARLY EXIT: If this node already points to the root, it means 
+                // another thread beat us to it, and the rest of the chain is already flat!
+                if (next == root) {
+                    break; 
+                }
+                
+                // Safely write the root. If another thread writes it at the exact 
+                // same time, it's a benign race (they are writing the identical value).
+                __atomic_store_n(&parent[cur], root, __ATOMIC_RELAXED);
+                
+                cur = next;
+            }
+        }
+    }
+
+    /**
+     * @brief comprss the tree but also does the path halvin which is more effective
+     * 
+     */
+    void compress_tree_v2() {
     #pragma omp parallel for schedule(guided)
     for (int u = 0; u < this->N; u++) {
         int cur = u;
         int p = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED);
-        
-        // Fast path: If the node is a root, or already points directly to a root, 
-        // we skip it immediately.
-        if (cur == p || p == __atomic_load_n(&parent[p], __ATOMIC_RELAXED)) {
-            continue; 
-        }
 
-        // Pass 1: Walk to find the true root
-        while (cur != p) {
+        // walk until p is a root
+        while (p != __atomic_load_n(&parent[p], __ATOMIC_RELAXED)) {
+            int gp = __atomic_load_n(&parent[p], __ATOMIC_RELAXED);
+            __atomic_store_n(&parent[cur], gp, __ATOMIC_RELAXED); // halving step
             cur = p;
-            p = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED);
+            p = gp;
         }
-        int root = cur; 
 
-        // Pass 2: Retrace the path and point everything directly to the root
-        cur = u;
-        while (cur != root) {
-            int next = __atomic_load_n(&parent[cur], __ATOMIC_RELAXED);
-            
-            // EARLY EXIT: If this node already points to the root, it means 
-            // another thread beat us to it, and the rest of the chain is already flat!
-            if (next == root) {
-                break; 
-            }
-            
-            // Safely write the root. If another thread writes it at the exact 
-            // same time, it's a benign race (they are writing the identical value).
-            __atomic_store_n(&parent[cur], root, __ATOMIC_RELAXED);
-            
-            cur = next;
-        }
+        // p is now the root
+        __atomic_store_n(&parent[u], p, __ATOMIC_RELAXED);
     }
 }
 
