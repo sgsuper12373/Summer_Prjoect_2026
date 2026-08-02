@@ -1,5 +1,0 @@
-graph,threads,chunk_size_p0,iterations,phase0_us,phase1_us,phase2_us,phase3_us
-internet,16,16,6,2452,5633,3469,1809
-internet,16,16,6,2536,8037,1910,1828
-internet,16,16,6,2581,7777,2001,1962
-internet,16,16,6,2911,6373,3873,2043

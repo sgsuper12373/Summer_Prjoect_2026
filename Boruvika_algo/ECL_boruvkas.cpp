@@ -26,10 +26,10 @@ namespace fs = std::filesystem;
 
 
 struct timed_phases{
-    double phase0  = 0.0 ; // us: flatten component ids + reset cheapest
-    double phase1  = 0.0 ; // us: find cheapest outgoing edge per component
-    double phase2  = 0.0 ; // us: merge 
-    double phase3  = 0.0 ; // us: this would be used for manual merge
+    double phase0  = 0.0 ; // s: flatten component ids + reset cheapest
+    double phase1  = 0.0 ; // s: find cheapest outgoing edge per component
+    double phase2  = 0.0 ; // s: merge
+    double phase3  = 0.0 ; // s: this would be used for manual merge
     long long iterations = 0 ; // number of while-loop passes
 
     void reset_timer(){
@@ -148,7 +148,7 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
             cheapest[u] = INF;
         }
         auto end = high_resolution_clock::now(); 
-        phase_timer.phase0 += duration_cast<microseconds>(end - start).count();
+        phase_timer.phase0 += duration<double>(end - start).count();
 
         
 
@@ -174,7 +174,7 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
             }
         }
         end = high_resolution_clock::now(); 
-        phase_timer.phase1 += duration_cast<microseconds>(end - start).count();
+        phase_timer.phase1 += duration<double>(end - start).count();
 
         // PHASE_2: merge comps
         // Accumulate via reductions instead of atomics on shared counters.
@@ -196,7 +196,7 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
             }
         }
         end = high_resolution_clock::now();
-        phase_timer.phase2 += duration_cast<microseconds>(end - start).count();
+        phase_timer.phase2 += duration<double>(end - start).count();
 
         MST_Weight += roundW;
         curr_comps -= merges;
@@ -232,7 +232,7 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
             cheapest[u] = INF; 
         }
         auto end = high_resolution_clock::now(); 
-        phase_timer.phase0 += duration_cast<microseconds>(end-start).count(); 
+        phase_timer.phase0 += duration<double>(end-start).count();
 
 
         // PHASE_1 find the cheapest outgoing edge from each component
@@ -250,7 +250,7 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
         }
         end = high_resolution_clock::now(); 
-        phase_timer.phase1 += duration_cast<microseconds>(end-start).count(); 
+        phase_timer.phase1 += duration<double>(end-start).count();
 
         // PHASE_2: merge comps
         // Accumulate via reductions instead of atomics on shared counters.
@@ -272,16 +272,17 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
             }
         }
         end = high_resolution_clock::now();
-        phase_timer.phase2 += duration_cast<microseconds>(end - start).count();
+        phase_timer.phase2 += duration<double>(end - start).count();
 
         MST_Weight += roundW;
         curr_comps -= merges;
 
         // PHASE_3 flatten the tree after unino operations
         start = high_resolution_clock::now(); 
-        dsu.compress_tree_v2(); 
+        // dsu.compress_tree_v2(); 
+        dsu.compress_tree_v1(); 
         end = high_resolution_clock::now(); 
-        phase_timer.phase3 += duration_cast<microseconds>(end-start).count();
+        phase_timer.phase3 += duration<double>(end-start).count();
 
     }
     return MST_Weight; 
@@ -290,11 +291,21 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
 
 void print_usage() {
-    cerr << "USAGE: ./ecl_boruvkas <filename> [results_dir] [-n <threads>] [-p0 <chunk_size>]\n";
+    cerr << "USAGE: ./ecl_boruvkas <filename> [-n <threads>] [-p0 <chunk_size>] [--results-dir <path>]\n";
     cerr << "Runs serial (full/half/split) and OMP Boruvka N times each and writes\n";
     cerr << "per-run timings to <results_dir>/<testfile>_result.csv\n";
-    cerr << "(results_dir defaults to '/home/sumitgarad/Documents/GitHub/Summer_Prjoect_2026/Boruvika_algo/Results').\n";
+    cerr << "(results_dir defaults to 'Results/<YYYYMMDD_HHMMSS>').\n";
     cerr << "If -p0 is not provided, reads from CHUNK_SIZE environment variable.\n";
+}
+
+string timestamped_results_dir() {
+    const auto now = system_clock::to_time_t(system_clock::now());
+    tm local_time{};
+    localtime_r(&now, &local_time);
+
+    ostringstream timestamp;
+    timestamp << put_time(&local_time, "%Y%m%d_%H%M%S");
+    return (fs::path("Results") / timestamp.str()).string();
 }
 
 int main(int argc, char* argv[]) {
@@ -309,7 +320,7 @@ int main(int argc, char* argv[]) {
         chunk_size = atoi(env_p0);
     }
 
-    fs::path results_dir = fs::path("/home/sumitgarad/Documents/GitHub/Summer_Prjoect_2026/Boruvika_algo/Results");
+    fs::path results_dir = timestamped_results_dir();
     string filename = argv[1];
 
     for (int i = 2; i < argc; i++) {
@@ -318,10 +329,12 @@ int main(int argc, char* argv[]) {
             num_threads = atoi(argv[++i]);
         } else if (arg == "-p0" && i + 1 < argc) {
             chunk_size = atoi(argv[++i]);
-        } else if (arg[0] != '-') {
-            results_dir = fs::path(arg);
+        } else if ((arg == "--results-dir" || arg == "-r") && i + 1 < argc) {
+            results_dir = fs::path(argv[++i]);
         } else {
-            cerr << "Unknown argument: " << arg << "\n";
+            cerr << "Unknown or misplaced argument: " << arg << "\n";
+            print_usage();
+            return 1;
         }
     }
 
@@ -358,14 +371,16 @@ int main(int argc, char* argv[]) {
     };
     const int M = (int)methods.size();
 
-    // time_us[v][r] = time of version v on run r; weight is the same for every
+    // time_s[v][r] = time of version v on run r; weight is the same for every
     // version on a given run (kept once per run for the shared 'weight' column).
-    vector<vector<long long>> time_us(M, vector<long long>(N_RUNS, 0));
+    vector<vector<double>> time_s(M, vector<double>(N_RUNS, 0.0));
     vector<long long> run_weight(N_RUNS, 0);
 
-    // Per-run phase breakdown for the OMP version (phases are only timed there).
+    // Per-run phase breakdown for the OMP versions (phases are only timed there).
     struct phase_row { double p0, p1, p2, p3; long long iters; };
-    vector<phase_row> omp_intermediate_phases(N_RUNS, {0, 0, 0, 0, 0});
+    map<string, vector<phase_row>> omp_phases;
+    omp_phases["omp_half"] = vector<phase_row>(N_RUNS, {0, 0, 0, 0, 0});
+    omp_phases["omp_intermediate"] = vector<phase_row>(N_RUNS, {0, 0, 0, 0, 0});
 
     // No warm-up: every run is recorded so the median is taken over raw runs
     // (the cold first run is just one of N, and the median ignores it).
@@ -375,28 +390,29 @@ int main(int argc, char* argv[]) {
             auto start = high_resolution_clock::now();
             long long weight = methods[v].second(G);
             auto end = high_resolution_clock::now();
-            long long us = duration_cast<microseconds>(end - start).count();
+            double seconds = duration<double>(end - start).count();
 
-            time_us[v][r]  = us;
+            time_s[v][r]  = seconds;
             run_weight[r]  = weight;   // identical across versions
             cout << left << setw(14) << methods[v].first
                  << "run " << right << setw(2) << (r + 1)
-                 << "  " << setw(9) << us << " us";
+                 << "  " << fixed << setprecision(6) << setw(10) << seconds << " s";
 
             // Only the OMP versions time individual phases (iterations > 0).
             if (phase_timer.iterations > 0) {
-                if (string(methods[v].first) == "omp_intermediate") {
-                    omp_intermediate_phases[r] = { phase_timer.phase0, phase_timer.phase1,
-                                                   phase_timer.phase2, phase_timer.phase3,
-                                                   phase_timer.iterations };
+                string algo_name = string(methods[v].first);
+                if (omp_phases.count(algo_name)) {
+                    omp_phases[algo_name][r] = { phase_timer.phase0, phase_timer.phase1,
+                                                 phase_timer.phase2, phase_timer.phase3,
+                                                 phase_timer.iterations };
                 }
                 double total = phase_timer.phase0 + phase_timer.phase1 + phase_timer.phase2 + phase_timer.phase3;
                 double denom = (total > 0.0) ? total : 1.0;
                 cout << "  [iters " << phase_timer.iterations << "]"
-                     << " p0 " << setw(8) << (long long)phase_timer.phase0 << " us (" << setw(5) << fixed << setprecision(1) << 100.0 * phase_timer.phase0 / denom << "%)"
-                     << " p1 " << setw(8) << (long long)phase_timer.phase1 << " us (" << setw(5) << fixed << setprecision(1) << 100.0 * phase_timer.phase1 / denom << "%)"
-                     << " p2 " << setw(8) << (long long)phase_timer.phase2 << " us (" << setw(5) << fixed << setprecision(1) << 100.0 * phase_timer.phase2 / denom << "%)"
-                     << " p3 " << setw(8) << (long long)phase_timer.phase3 << " us (" << setw(5) << fixed << setprecision(1) << 100.0 * phase_timer.phase3 / denom << "%)";
+                     << " p0 " << setw(10) << setprecision(6) << phase_timer.phase0 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase0 / denom << "%)"
+                     << " p1 " << setw(10) << setprecision(6) << phase_timer.phase1 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase1 / denom << "%)"
+                     << " p2 " << setw(10) << setprecision(6) << phase_timer.phase2 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase2 / denom << "%)"
+                     << " p3 " << setw(10) << setprecision(6) << phase_timer.phase3 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase3 / denom << "%)";
                 cout.unsetf(ios::fixed);
             }
             cout << "\n";
@@ -404,9 +420,9 @@ int main(int argc, char* argv[]) {
     }
 
     // Compute medians
-    vector<long long> medians(M);
+    vector<double> medians(M);
     for (int v = 0; v < M; v++) {
-        vector<long long> sorted_times = time_us[v];
+        vector<double> sorted_times = time_s[v];
         sort(sorted_times.begin(), sorted_times.end());
         medians[v] = sorted_times[N_RUNS / 2];
     }
@@ -415,9 +431,13 @@ int main(int argc, char* argv[]) {
     auto phase_cmp = [](const phase_row& a, const phase_row& b) {
         return (a.p0 + a.p1 + a.p2 + a.p3) < (b.p0 + b.p1 + b.p2 + b.p3);
     };
-    vector<phase_row> sorted_phases = omp_intermediate_phases;
-    sort(sorted_phases.begin(), sorted_phases.end(), phase_cmp);
-    phase_row median_phase = sorted_phases[N_RUNS / 2];
+    
+    map<string, phase_row> median_phases;
+    for (auto& pair : omp_phases) {
+        vector<phase_row> sorted_phases = pair.second;
+        sort(sorted_phases.begin(), sorted_phases.end(), phase_cmp);
+        median_phases[pair.first] = sorted_phases[N_RUNS / 2];
+    }
 
     bool write_header = true;
     if (fs::exists(csv_file)) write_header = (fs::file_size(csv_file) == 0);
@@ -430,9 +450,10 @@ int main(int argc, char* argv[]) {
     }
     if (write_header) {
         csv << "graph,threads,chunk_size_p0,weight";
-        for (auto& m : methods) csv << "," << m.first;
+        for (auto& m : methods) csv << "," << m.first << "_s";
         csv << "\n";
     }
+    csv << fixed << setprecision(9);
     csv << stem << "," << num_threads << "," << chunk_size << "," << final_weight;
     for (int v = 0; v < M; v++) csv << "," << medians[v];
     csv << "\n";
@@ -440,9 +461,9 @@ int main(int argc, char* argv[]) {
 
     cout << "--------------------------------------------------\n";
     cout << "Appended median result to " << csv_path << "\n";
-    cout << "CSV columns: graph,threads,chunk_size_p0,weight,serial_half,omp_half,omp_intermediate\n";
+    cout << "CSV columns: graph,threads,chunk_size_p0,weight,serial_half_s,omp_half_s,omp_intermediate_s\n";
 
-    // Per-phase timing for the OMP intermediate version: <testfile>_phases.csv
+    // Per-phase timing for the OMP versions: <testfile>_phases.csv
     fs::path phase_file = results_dir / (stem + "_phases.csv");
     bool write_phase_header = true;
     if (fs::exists(phase_file)) write_phase_header = (fs::file_size(phase_file) == 0);
@@ -450,17 +471,20 @@ int main(int argc, char* argv[]) {
     ofstream pcsv(phase_file.string(), ios::app);
     if (pcsv) {
         if (write_phase_header) {
-            pcsv << "graph,threads,chunk_size_p0,iterations,phase0_us,phase1_us,phase2_us,phase3_us\n";
+            pcsv << "graph,algorithm,threads,chunk_size_p0,iterations,phase0_s,phase1_s,phase2_s,phase3_s\n";
         }
-        pcsv << stem << "," << num_threads << "," << chunk_size << ","
-             << median_phase.iters << ","
-             << (long long)median_phase.p0 << ","
-             << (long long)median_phase.p1 << ","
-             << (long long)median_phase.p2 << ","
-             << (long long)median_phase.p3 << "\n";
+        for (auto& pair : median_phases) {
+            pcsv << stem << "," << pair.first << "," << num_threads << "," << chunk_size << ","
+                 << pair.second.iters << ","
+                 << fixed << setprecision(9)
+                 << pair.second.p0 << ","
+                 << pair.second.p1 << ","
+                 << pair.second.p2 << ","
+                 << pair.second.p3 << "\n";
+        }
         pcsv.close();
         cout << "Appended median OMP phase timings to " << phase_file.string() << "\n";
-        cout << "phase0=flatten+reset, phase1=find cheapest edge, phase2=merge comps\n";
+        cout << "phase0=flatten+reset, phase1=find cheapest edge, phase2=merge comps (seconds)\n";
     } else {
         cerr << "WARNING: could not open phase CSV '" << phase_file.string() << "' for writing\n";
     }
