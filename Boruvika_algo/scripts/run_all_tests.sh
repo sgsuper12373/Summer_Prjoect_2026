@@ -4,8 +4,11 @@ set -euo pipefail
 # Runs the Boruvka benchmark on every .egr file in the tests/ folder.
 # Each batch writes its timings to Results/<timestamp>/<testfile>_result.csv.
 
+# Change to the root project directory so paths work everywhere
+cd "$(dirname "$0")/.."
+
 BIN=./a.out
-SRC=ECL_boruvkas.cpp
+SRC=src/ECL_boruvkas.cpp
 TESTS_DIR=./tests
 RESULTS_DIR="Results/$(date +%Y%m%d_%H%M%S)"
 
