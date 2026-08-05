@@ -29,6 +29,9 @@ def generate_plots(results_dir):
         sns.lineplot(data=df_graph, x='threads', y='omp_half_s', marker='s', label='omp_half')
         sns.lineplot(data=df_graph, x='threads', y='omp_intermediate_s', marker='^', label='omp_intermediate')
         
+        if 'indigo_omp_s' in df_graph.columns:
+            sns.lineplot(data=df_graph, x='threads', y='indigo_omp_s', marker='D', label='indigo_omp', color='black', linestyle='--')
+        
         plt.title(f"Scaling Analysis for {graph} (chunk_size=16)")
         plt.xlabel("Number of Threads")
         plt.ylabel("Execution Time (seconds)")
@@ -47,6 +50,9 @@ def generate_plots(results_dir):
         
         sns.lineplot(data=df_graph, x='chunk_size_p0', y='omp_half_s', marker='s', label='omp_half')
         sns.lineplot(data=df_graph, x='chunk_size_p0', y='omp_intermediate_s', marker='^', label='omp_intermediate')
+        
+        if 'indigo_omp_s' in df_graph.columns:
+            sns.lineplot(data=df_graph, x='chunk_size_p0', y='indigo_omp_s', marker='D', label='indigo_omp', color='black', linestyle='--')
         
         plt.title(f"Chunk Size Impact for {graph} (threads=16)")
         plt.xlabel("Chunk Size")

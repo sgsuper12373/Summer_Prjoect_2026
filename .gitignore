@@ -50,4 +50,4 @@ __pycache__/
 /Boruvika_algo/Results/*
 
 #ignore the baseline algo as they might increase in size 
-Boruvika_algo/baseline_algo/Indigo3Suite/
+Boruvika_algo/baselines/Indigo3Suite/
