@@ -21,6 +21,8 @@ mkdir -p "${RESULTS_DIR}"
 graphs=("internet.egr" "USA-road-d.NY.egr")
 threads=(1 2 4 8 12 16)
 chunks=(12 16 20)
+algo=("serial_half" "omp_half" "omp_intermediate")
+N_RUNS=9
 
 for g in "${graphs[@]}"; do
     file="${TESTS_DIR}/${g}"
@@ -34,9 +36,13 @@ for g in "${graphs[@]}"; do
     
     for t in "${threads[@]}"; do
         for c in "${chunks[@]}"; do
-            echo ""
-            echo ">>> Running on: ${file} (threads=${t}, chunk_size=${c})"
-            "${BIN}" "${file}" -n "${t}" -p0 "${c}" --results-dir "${RESULTS_DIR}"
+            for a in "${algo[@]}"; do 
+                for run in $(seq 1 $N_RUNS); do
+                    echo ""
+                    echo ">>> Running on: ${file} (threads=${t}, chunk_size=${c}), algo=${a}, run=${run}/${N_RUNS}"
+                    "${BIN}" "${file}" -n "${t}" -p0 "${c}" --results-dir "${RESULTS_DIR}" -algo "${a}"
+                done
+            done 
         done
     done
 done

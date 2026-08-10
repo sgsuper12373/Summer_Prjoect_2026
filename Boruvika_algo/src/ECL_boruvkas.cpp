@@ -293,9 +293,9 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
 
 void print_usage() {
-    cerr << "USAGE: ./ecl_boruvkas <filename> [-n <threads>] [-p0 <chunk_size>] [--results-dir <path>]\n";
-    cerr << "Runs serial (full/half/split) and OMP Boruvka N times each and writes\n";
-    cerr << "per-run timings to <results_dir>/<testfile>_result.csv\n";
+    cerr << "USAGE: ./ecl_boruvkas <filename> -algo <name> [-n <threads>] [-p0 <chunk_size>] [--results-dir <path>]\n";
+    cerr << "Algorithms (-algo): serial_full, serial_half, serial_split, omp_half, omp_intermediate\n";
+    cerr << "Runs the selected algorithm once and appends results to <results_dir>/<testfile>_result.csv\n";
     cerr << "(results_dir defaults to 'Results/<YYYYMMDD_HHMMSS>').\n";
     cerr << "If -p0 is not provided, reads from CHUNK_SIZE environment variable.\n";
 }
@@ -324,6 +324,7 @@ int main(int argc, char* argv[]) {
 
     fs::path results_dir = timestamped_results_dir();
     string filename = argv[1];
+    string algo_name = "";
 
     for (int i = 2; i < argc; i++) {
         string arg = argv[i];
@@ -333,11 +334,19 @@ int main(int argc, char* argv[]) {
             chunk_size = atoi(argv[++i]);
         } else if ((arg == "--results-dir" || arg == "-r") && i + 1 < argc) {
             results_dir = fs::path(argv[++i]);
+        } else if (arg == "-algo" && i + 1 < argc) {
+            algo_name = argv[++i];
         } else {
             cerr << "Unknown or misplaced argument: " << arg << "\n";
             print_usage();
             return 1;
         }
+    }
+
+    if (algo_name == "") {
+        cerr << "ERROR: -algo <name> is required.\n";
+        print_usage();
+        return 1;
     }
 
     omp_set_num_threads(num_threads);
@@ -349,97 +358,48 @@ int main(int argc, char* argv[]) {
     fs::path csv_file = results_dir / (stem + "_result.csv");
     string csv_path_str = csv_file.string();
     const char* csv_path = csv_path_str.c_str();
-    const int N_RUNS = 9;
 
     cout << "\nMST benchmark for " << filename << "\n";
     cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n";
     cout << "OMP threads: " << num_threads << "\n";
     cout << "Chunk size: " << chunk_size << "\n";
-    cout << "Runs per version: " << N_RUNS << "\n";
+    cout << "Algorithm: " << algo_name << "\n";
     cout << "--------------------------------------------------\n";
 
-    // Each version: a CSV column label and a callable returning the MST weight.
-    // vector<pair<const char*, function<long long(ECLgraph)>>> methods = {
-    //     { "serial_full",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_full_cpu>(g);  } },
-    //     { "serial_half",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_half_cpu>(g);  } },
-    //     { "serial_split", [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_split_cpu>(g); } },
-    //     { "omp_half",     [](ECLgraph g){ return boruvka_omp<DSU_half_omp>(g);             } },
-    // };
+    map<string, function<long long(ECLgraph)>> methods;
+    methods["serial_full"] = [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_full_cpu>(g); };
+    methods["serial_half"] = [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_half_cpu>(g); };
+    methods["serial_split"] = [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_split_cpu>(g); };
+    methods["omp_half"] = [chunk_size](ECLgraph g){ return boruvka_omp<DSU_half_omp>(g, chunk_size); };
+    methods["omp_intermediate"] = [chunk_size](ECLgraph g){ return Boruvka_omp_intermediate<DSU_intermediate_omp>(g, chunk_size); };
 
-    vector<pair<const char*, function<long long(ECLgraph)>>> methods = {
-        { "serial_half",  [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_half_cpu>(g);  } },
-        { "omp_half",     [chunk_size](ECLgraph g){ return boruvka_omp<DSU_half_omp>(g, chunk_size);} },
-        { "omp_intermediate", [chunk_size](ECLgraph g){ return Boruvka_omp_intermediate<DSU_intermediate_omp>(g,chunk_size); }}, 
-    };
-    const int M = (int)methods.size();
-
-    // time_s[v][r] = time of version v on run r; weight is the same for every
-    // version on a given run (kept once per run for the shared 'weight' column).
-    vector<vector<double>> time_s(M, vector<double>(N_RUNS, 0.0));
-    vector<long long> run_weight(N_RUNS, 0);
-
-    // Per-run phase breakdown for the OMP versions (phases are only timed there).
-    struct phase_row { double p0, p1, p2, p3; long long iters; };
-    map<string, vector<phase_row>> omp_phases;
-    omp_phases["omp_half"] = vector<phase_row>(N_RUNS, {0, 0, 0, 0, 0});
-    omp_phases["omp_intermediate"] = vector<phase_row>(N_RUNS, {0, 0, 0, 0, 0});
-
-    // No warm-up: every run is recorded so the median is taken over raw runs
-    // (the cold first run is just one of N, and the median ignores it).
-    for (int v = 0; v < M; v++) {
-        for (int r = 0; r < N_RUNS; r++) {
-            phase_timer.reset_timer(); 
-            auto start = high_resolution_clock::now();
-            long long weight = methods[v].second(G);
-            auto end = high_resolution_clock::now();
-            double seconds = duration<double>(end - start).count();
-
-            time_s[v][r]  = seconds;
-            run_weight[r]  = weight;   // identical across versions
-            cout << left << setw(14) << methods[v].first
-                 << "run " << right << setw(2) << (r + 1)
-                 << "  " << fixed << setprecision(6) << setw(10) << seconds << " s";
-
-            // Only the OMP versions time individual phases (iterations > 0).
-            if (phase_timer.iterations > 0) {
-                string algo_name = string(methods[v].first);
-                if (omp_phases.count(algo_name)) {
-                    omp_phases[algo_name][r] = { phase_timer.phase0, phase_timer.phase1,
-                                                 phase_timer.phase2, phase_timer.phase3,
-                                                 phase_timer.iterations };
-                }
-                double total = phase_timer.phase0 + phase_timer.phase1 + phase_timer.phase2 + phase_timer.phase3;
-                double denom = (total > 0.0) ? total : 1.0;
-                cout << "  [iters " << phase_timer.iterations << "]"
-                     << " p0 " << setw(10) << setprecision(6) << phase_timer.phase0 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase0 / denom << "%)"
-                     << " p1 " << setw(10) << setprecision(6) << phase_timer.phase1 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase1 / denom << "%)"
-                     << " p2 " << setw(10) << setprecision(6) << phase_timer.phase2 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase2 / denom << "%)"
-                     << " p3 " << setw(10) << setprecision(6) << phase_timer.phase3 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase3 / denom << "%)";
-                cout.unsetf(ios::fixed);
-            }
-            cout << "\n";
-        }
+    if (methods.find(algo_name) == methods.end()) {
+        cerr << "ERROR: Unknown algorithm '" << algo_name << "'\n";
+        print_usage();
+        freeECLgraph(G);
+        return 1;
     }
 
-    // Compute medians
-    vector<double> medians(M);
-    for (int v = 0; v < M; v++) {
-        vector<double> sorted_times = time_s[v];
-        sort(sorted_times.begin(), sorted_times.end());
-        medians[v] = sorted_times[N_RUNS / 2];
-    }
-    long long final_weight = run_weight[0];
+    phase_timer.reset_timer(); 
+    auto start = high_resolution_clock::now();
+    long long weight = methods[algo_name](G);
+    auto end = high_resolution_clock::now();
+    double total_time = duration<double>(end - start).count();
 
-    auto phase_cmp = [](const phase_row& a, const phase_row& b) {
-        return (a.p0 + a.p1 + a.p2 + a.p3) < (b.p0 + b.p1 + b.p2 + b.p3);
-    };
-    
-    map<string, phase_row> median_phases;
-    for (auto& pair : omp_phases) {
-        vector<phase_row> sorted_phases = pair.second;
-        sort(sorted_phases.begin(), sorted_phases.end(), phase_cmp);
-        median_phases[pair.first] = sorted_phases[N_RUNS / 2];
+    cout << left << setw(18) << algo_name
+         << "  " << fixed << setprecision(6) << setw(10) << total_time << " s";
+
+    if (phase_timer.iterations > 0) {
+        double total = phase_timer.phase0 + phase_timer.phase1 + phase_timer.phase2 + phase_timer.phase3;
+        double denom = (total > 0.0) ? total : 1.0;
+        cout << "  [iters " << phase_timer.iterations << "]"
+             << " p0 " << setw(10) << setprecision(6) << phase_timer.phase0 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase0 / denom << "%)"
+             << " p1 " << setw(10) << setprecision(6) << phase_timer.phase1 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase1 / denom << "%)"
+             << " p2 " << setw(10) << setprecision(6) << phase_timer.phase2 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase2 / denom << "%)"
+             << " p3 " << setw(10) << setprecision(6) << phase_timer.phase3 << " s (" << setw(5) << setprecision(1) << 100.0 * phase_timer.phase3 / denom << "%)";
+        cout.unsetf(ios::fixed);
     }
+    cout << "\n";
 
     bool write_header = true;
     if (fs::exists(csv_file)) write_header = (fs::file_size(csv_file) == 0);
@@ -451,45 +411,17 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     if (write_header) {
-        csv << "graph,threads,chunk_size_p0,weight";
-        for (auto& m : methods) csv << "," << m.first << "_s";
-        csv << "\n";
+        csv << "graph,algorithm,threads,chunk_size_p0,weight,total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s\n";
     }
     csv << fixed << setprecision(9);
-    csv << stem << "," << num_threads << "," << chunk_size << "," << final_weight;
-    for (int v = 0; v < M; v++) csv << "," << medians[v];
-    csv << "\n";
+    csv << stem << "," << algo_name << "," << num_threads << "," << chunk_size << "," << weight << ","
+        << total_time << "," << phase_timer.iterations << "," 
+        << phase_timer.phase0 << "," << phase_timer.phase1 << "," 
+        << phase_timer.phase2 << "," << phase_timer.phase3 << "\n";
     csv.close();
 
     cout << "--------------------------------------------------\n";
-    cout << "Appended median result to " << csv_path << "\n";
-    cout << "CSV columns: graph,threads,chunk_size_p0,weight,serial_half_s,omp_half_s,omp_intermediate_s\n";
-
-    // Per-phase timing for the OMP versions: <testfile>_phases.csv
-    fs::path phase_file = results_dir / (stem + "_phases.csv");
-    bool write_phase_header = true;
-    if (fs::exists(phase_file)) write_phase_header = (fs::file_size(phase_file) == 0);
-
-    ofstream pcsv(phase_file.string(), ios::app);
-    if (pcsv) {
-        if (write_phase_header) {
-            pcsv << "graph,algorithm,threads,chunk_size_p0,iterations,phase0_s,phase1_s,phase2_s,phase3_s\n";
-        }
-        for (auto& pair : median_phases) {
-            pcsv << stem << "," << pair.first << "," << num_threads << "," << chunk_size << ","
-                 << pair.second.iters << ","
-                 << fixed << setprecision(9)
-                 << pair.second.p0 << ","
-                 << pair.second.p1 << ","
-                 << pair.second.p2 << ","
-                 << pair.second.p3 << "\n";
-        }
-        pcsv.close();
-        cout << "Appended median OMP phase timings to " << phase_file.string() << "\n";
-        cout << "phase0=flatten+reset, phase1=find cheapest edge, phase2=merge comps (seconds)\n";
-    } else {
-        cerr << "WARNING: could not open phase CSV '" << phase_file.string() << "' for writing\n";
-    }
+    cout << "Appended result to " << csv_path << "\n";
 
     freeECLgraph(G);
     return 0;
