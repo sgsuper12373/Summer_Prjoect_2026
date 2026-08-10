@@ -382,7 +382,7 @@ public:
      */
     int G_find( int u ) override {
         if( !isValidNode(u) ){
-            cerr << "Erroo : invalid Node : " << u << "\n"; 
+            cerr << "Error : invalid Node : " << u << "\n"; 
             exit(1); 
         }
         return parent[u]; 
