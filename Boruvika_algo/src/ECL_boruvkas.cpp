@@ -353,7 +353,14 @@ int main(int argc, char* argv[]) {
 
     omp_set_num_threads(num_threads);
 
+    
+    //recored the time taken to load the graph
+
+    auto start = high_resolution_clock::now(); 
     ECLgraph G = readECLgraph(filename.c_str());
+    auto end = high_resolution_clock::now(); 
+    double G_load_time = duration<double>(end - start).count();
+
 
 
     // according to ECL MST paper when graph is unweighted they are assigning the random weights to the graphs. ( page 6 )
@@ -397,9 +404,9 @@ int main(int argc, char* argv[]) {
     }
 
     phase_timer.reset_timer(); 
-    auto start = high_resolution_clock::now();
+    start = high_resolution_clock::now();
     long long weight = methods[algo_name](G);
-    auto end = high_resolution_clock::now();
+    end = high_resolution_clock::now();
     double total_time = duration<double>(end - start).count();
 
     cout << left << setw(18) << algo_name
@@ -427,10 +434,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     if (write_header) {
-        csv << "graph,algorithm,threads,chunk_size_p0,weight,total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s\n";
+        csv << "graph,algorithm,threads,chunk_size_p0,weight,graph_load_time, total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s\n";
     }
     csv << fixed << setprecision(9);
     csv << stem << "," << algo_name << "," << num_threads << "," << chunk_size << "," << weight << ","
+        << G_load_time << ", " 
         << total_time << "," << phase_timer.iterations << "," 
         << phase_timer.phase0 << "," << phase_timer.phase1 << "," 
         << phase_timer.phase2 << "," << phase_timer.phase3 << "\n";
