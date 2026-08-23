@@ -13,6 +13,13 @@ Go to MST-> alex fallin and check results section and find the input graphs  -> 
 Do not do the 9 repeat for large graphs. time the part to load the graph -> DONE
 check if you can run it on non-hyperthreaded cores -> CAN be runned     
 
+# Edge encoding 
+             64 bits
+┌──────────────────────────┬──────────────────────────┐
+│      ordered_weight      │       edge_index         │
+│         32 bits          │          32 bits         │
+└──────────────────────────┴──────────────────────────┘
+
 
 
 # taskset guidelines 

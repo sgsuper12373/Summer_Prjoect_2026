@@ -64,13 +64,27 @@ static inline void atomicMinU64( unsigned long long* addr, unsigned long long va
     }
 }
 
+/**
+ * @brief Generates a key for an edge based on its weight and index
+ *  encodes the weight in the upper 32 bits and the edge index in the lower 32 bits.
+ * 
+ * @param weight 
+ * @param edge_index 
+ * @return unsigned long long 
+ */
+static inline unsigned long long edgeKey(int weight, int edge_index){
+    const unsigned int ordered_weight = static_cast<unsigned int>(weight) ^ 0x80000000u;
+    return (static_cast<unsigned long long>(ordered_weight) << 32) |
+           static_cast<unsigned int>(edge_index);
+}
+
 // Template function for Boruvka's algorithm, accepting the DSU type
 template <typename DSU_Type>
-int Boruvka_CPU(ECLgraph G )  {
+long long  Boruvka_CPU(ECLgraph G )  {
     // Instantiate the specified DSU structure
     DSU_Type dsu(G.nodes);
     
-    int MST_Weight = 0;
+    long long MST_Weight = 0;
     int prev_comps = INT_MAX;
     int curr_comps = G.nodes;
 
@@ -171,7 +185,7 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
 
                 if( ult_u == comp[v] ) continue; // same comp, skip
 
-                unsigned long long key = ((unsigned long long)(unsigned)G.eweight[i] << 32) | (unsigned)i;
+                unsigned long long key = edgeKey(G.eweight[i], i);
                 atomicMinU64(&cheapest[ult_u], key);
             }
         }
@@ -189,7 +203,7 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
             if( cheapest[c] == INF ) continue;
 
             int i = (int)(cheapest[c] & 0xffffffffu);
-            int w = (int)(cheapest[c] >> 32);
+            int w = static_cast<int>((cheapest[c] >> 32) ^ 0x80000000u);
             int v = G.nlist[i];
 
             if( dsu.G_union(c, v) ) {
@@ -246,7 +260,7 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
                 if( comp[u] == comp[v] ) continue;
 
-                unsigned long long key = ((unsigned long long)(unsigned)G.eweight[i] << 32) | (unsigned)i;
+                unsigned long long key = edgeKey(G.eweight[i], i);
                 atomicMinU64(&cheapest[comp[u]], key);
             }
 
@@ -265,7 +279,7 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
             if( cheapest[c] == INF ) continue;
 
             int i = (int)(cheapest[c] & 0xffffffffu);
-            int w = (int)(cheapest[c] >> 32);
+            int w = static_cast<int>((cheapest[c] >> 32) ^ 0x80000000u);
             int v = G.nlist[i];
 
             if( dsu.G_union(c, v) ) {
@@ -351,6 +365,15 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    if (num_threads <= 0) {
+        cerr << "ERROR: thread count must be positive.\n";
+        return 1;
+    }
+    if (chunk_size <= 0) {
+        cerr << "ERROR: chunk size must be positive.\n";
+        return 1;
+    }
+
     omp_set_num_threads(num_threads);
 
     
@@ -368,10 +391,11 @@ int main(int argc, char* argv[]) {
         G.eweight = new int[G.edges];
         for (int u = 0; u < G.nodes; u++) {
             for (int j = G.nindex[u]; j < G.nindex[u+1]; j++) {
-                int v = G.nlist[j];
+                const uint64_t u64 = static_cast<uint64_t>(u);
+                const uint64_t v64 = static_cast<uint64_t>(G.nlist[j]);
                 // Symmetric, deterministic, and pseudo-random
                 // Since (u + v) and (u * v) are commutative, the reverse edge gets the exact same weight.
-                G.eweight[j] = 1 + ((u + v + (u * v)) % MAX_WEIGHT);
+                G.eweight[j] = static_cast<int>(1 + ((u64 + v64 + (u64 * v64)) % MAX_WEIGHT));
             }
         }
     }
