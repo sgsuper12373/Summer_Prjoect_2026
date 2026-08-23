@@ -198,7 +198,7 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
         int merges = 0;
 
         start = high_resolution_clock::now();
-        #pragma omp parallel for schedule(guided) reduction(+:roundW) reduction(+:merges)
+        #pragma omp parallel for schedule(static, chunk_size) reduction(+:roundW) reduction(+:merges)
         for( int c = 0 ; c <  G.nodes; c++ ){
             if( cheapest[c] == INF ) continue;
 
@@ -274,7 +274,7 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
         int merges = 0;
 
         start = high_resolution_clock::now();
-        #pragma omp parallel for schedule(guided) reduction(+:roundW) reduction(+:merges)
+        #pragma omp parallel for schedule(static, chunk_size) reduction(+:roundW) reduction(+:merges)
         for( int c = 0 ; c <  G.nodes; c++ ){
             if( cheapest[c] == INF ) continue;
 
@@ -388,7 +388,8 @@ int main(int argc, char* argv[]) {
 
     // according to ECL MST paper when graph is unweighted they are assigning the random weights to the graphs. ( page 6 )
     if (G.eweight == NULL) {
-        G.eweight = new int[G.edges];
+        // G.eweight = new int[G.edges];
+        G.eweight = (int*)malloc(G.edges * sizeof(int));
         for (int u = 0; u < G.nodes; u++) {
             for (int j = G.nindex[u]; j < G.nindex[u+1]; j++) {
                 const uint64_t u64 = static_cast<uint64_t>(u);
