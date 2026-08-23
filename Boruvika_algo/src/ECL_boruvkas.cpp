@@ -318,6 +318,8 @@ int main(int argc, char* argv[]) {
 
     int num_threads = omp_get_max_threads();
     int chunk_size = 16;
+    int MAX_WEIGHT = 50; 
+
     if (const char* env_p0 = getenv("CHUNK_SIZE")) {
         chunk_size = atoi(env_p0);
     }
@@ -353,6 +355,20 @@ int main(int argc, char* argv[]) {
 
     ECLgraph G = readECLgraph(filename.c_str());
 
+
+    // according to ECL MST paper when graph is unweighted they are assigning the random weights to the graphs. ( page 6 )
+    if (G.eweight == NULL) {
+        G.eweight = new int[G.edges];
+        for (int u = 0; u < G.nodes; u++) {
+            for (int j = G.nindex[u]; j < G.nindex[u+1]; j++) {
+                int v = G.nlist[j];
+                // Symmetric, deterministic, and pseudo-random
+                // Since (u + v) and (u * v) are commutative, the reverse edge gets the exact same weight.
+                G.eweight[j] = 1 + ((u + v + (u * v)) % MAX_WEIGHT);
+            }
+        }
+    }
+
     fs::create_directories(results_dir);
     string stem = fs::path(filename).stem().string(); // test file name without dir/extension
     fs::path csv_file = results_dir / (stem + "_result.csv");
@@ -367,7 +383,7 @@ int main(int argc, char* argv[]) {
     cout << "--------------------------------------------------\n";
 
     map<string, function<long long(ECLgraph)>> methods;
-    methods["serial_full"] = [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_full_cpu>(g); };
+    methods["serial_full"] = [](ECLgraph G){ return (long long)Boruvka_CPU<DSU_full_cpu>(G); };
     methods["serial_half"] = [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_half_cpu>(g); };
     methods["serial_split"] = [](ECLgraph g){ return (long long)Boruvka_CPU<DSU_split_cpu>(g); };
     methods["omp_half"] = [chunk_size](ECLgraph g){ return boruvka_omp<DSU_half_omp>(g, chunk_size); };
