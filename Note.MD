@@ -32,3 +32,14 @@ check if you can run it on non-hyperthreaded cores -> CAN be runned
 
 ## E-cores, single-threaded (8 physical cores)
         taskset -c 8-15 ./boruvka_omp
+
+## check the cpu cache line for each core 
+for my pc 0-7 cores are hyperthreaded 
+        for cpu in {0..7}; do
+            echo -n "CPU $cpu: "
+            cat /sys/devices/system/cpu/cpu$cpu/cache/index0/coherency_line_size
+        done
+
+cache line for my cpus are 64 bit 
+hence I will get good performance if each thread works on  the 64/4 = 16 consecutive elements ( 0-15, 16-31.....    )
+hence chunksize 16 should be performaing better 
