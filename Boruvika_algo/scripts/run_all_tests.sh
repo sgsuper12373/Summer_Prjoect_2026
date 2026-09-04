@@ -28,6 +28,13 @@ chunks=(12 16 20)
 algo=("serial_half" "omp_half" "omp_intermediate")
 N_RUNS=9
 
+# 0 1 2 3 -> HT 
+# 4 5 6 7 8 9 10 11 -> Single 
+
+# 0 1 2 3 4 5 6 7  -> HT 
+# 8 - 15 - Single
+# taskset -c 8-15 
+
 for g in "${graphs[@]}"; do
     file="${TESTS_DIR}/${g}"
     if [[ ! -f "$file" ]]; then

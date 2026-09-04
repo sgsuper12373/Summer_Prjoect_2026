@@ -43,3 +43,20 @@ for my pc 0-7 cores are hyperthreaded
 cache line for my cpus are 64 bit 
 hence I will get good performance if each thread works on  the 64/4 = 16 consecutive elements ( 0-15, 16-31.....    )
 hence chunksize 16 should be performaing better 
+
+
+# TODO FOR 31-8-2026 
+- disable all hyperthreading. use last 8 cores only -> taskset -c 8-15 ./run_all_tests.sh
+- Use c++ random number genrator for the unweighted graphs -> This needs to be done 
+- for each algorithm create one plot, y-axis should throughput, x axis each group is for one graph . in each group we will have number of theads used joint bars 
+- same as above algo + chunk size 
+- prepare another plot where you fix the number of theads to the best performing config and now vary the chunk sizes 
+- at geometric mean bar in the last of graph 
+- One more plot-> choose the best number of threads config, and best chunk size and 
+        -> y-axis is throughput 
+        -> x-axis each each group we have two bars for algo, geomean at the end 
+
+## Next step s
+- read and understand ECL_MST 
+- get their code running on GPU, and then plan baseline code. 
+- analyze memory access patters for better memory coeasling, thread divergence, shared memory, bank conflicts analysis

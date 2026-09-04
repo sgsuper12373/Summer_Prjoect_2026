@@ -20,6 +20,7 @@
 #include "DSU_datastructures.hpp"
 #include <chrono>
 #include <filesystem>
+#include <random>
 
 using namespace std;
 using namespace std::chrono;
@@ -324,6 +325,53 @@ string timestamped_results_dir() {
     return (fs::path("Results") / timestamp.str()).string();
 }
 
+// Assign one random weight to each undirected edge.  ECL graphs normally store
+// an undirected edge twice in CSR form, so the reverse entry must receive the
+// same weight for the graph to remain undirected.
+void assign_random_weights(ECLgraph& G, int max_weight) {
+    if (G.edges == 0) {
+        G.eweight = NULL;
+        return;
+    }
+
+    G.eweight = static_cast<int*>(malloc(G.edges * sizeof(*G.eweight)));
+    if (G.eweight == NULL) {
+        cerr << "ERROR: memory allocation failed while assigning random edge weights\n";
+        exit(EXIT_FAILURE);
+    }
+
+    fill(G.eweight, G.eweight + G.edges, 0);
+
+    random_device seed;
+    mt19937 generator(seed());
+    uniform_int_distribution<int> distribution(1, max_weight);
+
+    // Generate a weight once for every u--v pair with u <= v, then find and
+    // assign its reverse v--u entry.  This extra search is preprocessing only.
+    for (int u = 0; u < G.nodes; ++u) {
+        for (int i = G.nindex[u]; i < G.nindex[u + 1]; ++i) {
+            const int v = G.nlist[i];
+            if (u > v || G.eweight[i] != 0) continue;
+
+            const int weight = distribution(generator);
+            G.eweight[i] = weight;
+
+            if (u == v) continue;
+
+            for (int j = G.nindex[v]; j < G.nindex[v + 1]; ++j) {
+                if (G.nlist[j] == u && G.eweight[j] == 0) {
+                    G.eweight[j] = weight;
+                    break;
+                }
+            }
+        }
+    }
+
+    // for (int i = 0; i < G.edges; ++i) {
+    //     if (G.eweight[i] == 0) G.eweight[i] = distribution(generator);
+    // }
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         print_usage();
@@ -332,7 +380,7 @@ int main(int argc, char* argv[]) {
 
     int num_threads = omp_get_max_threads();
     int chunk_size = 16;
-    int MAX_WEIGHT = 50; 
+    constexpr int MAX_WEIGHT = 50;
 
     if (const char* env_p0 = getenv("CHUNK_SIZE")) {
         chunk_size = atoi(env_p0);
@@ -386,19 +434,9 @@ int main(int argc, char* argv[]) {
 
 
 
-    // according to ECL MST paper when graph is unweighted they are assigning the random weights to the graphs. ( page 6 )
+    // The ECL MST paper assigns random weights to unweighted graphs (page 6).
     if (G.eweight == NULL) {
-        // G.eweight = new int[G.edges];
-        G.eweight = (int*)malloc(G.edges * sizeof(int));
-        for (int u = 0; u < G.nodes; u++) {
-            for (int j = G.nindex[u]; j < G.nindex[u+1]; j++) {
-                const uint64_t u64 = static_cast<uint64_t>(u);
-                const uint64_t v64 = static_cast<uint64_t>(G.nlist[j]);
-                // Symmetric, deterministic, and pseudo-random
-                // Since (u + v) and (u * v) are commutative, the reverse edge gets the exact same weight.
-                G.eweight[j] = static_cast<int>(1 + ((u64 + v64 + (u64 * v64)) % MAX_WEIGHT));
-            }
-        }
+        assign_random_weights(G, MAX_WEIGHT);
     }
 
     fs::create_directories(results_dir);
