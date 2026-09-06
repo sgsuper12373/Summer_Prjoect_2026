@@ -27,6 +27,9 @@ threads=(1 2 4 8 12 16)
 chunks=(12 16 20)
 algo=("serial_half" "omp_half" "omp_intermediate")
 N_RUNS=9
+# Unweighted ECL graphs use this deterministic seed. Set WEIGHT_SEED before
+# invoking this script to deliberately benchmark another fixed instance.
+WEIGHT_SEED="${WEIGHT_SEED:-20260907}"
 
 # 0 1 2 3 -> HT 
 # 4 5 6 7 8 9 10 11 -> Single 
@@ -50,7 +53,7 @@ for g in "${graphs[@]}"; do
         for run in $(seq 1 $N_RUNS); do
             echo ""
             echo ">>> Running on: ${file} (threads=1, chunk_size=16), algo=${a}, run=${run}/${N_RUNS}"
-            "${BIN}" "${file}" -n 1 -p0 16 --results-dir "${RESULTS_DIR}" -algo "${a}"
+            "${BIN}" "${file}" -n 1 -p0 16 --weight-seed "${WEIGHT_SEED}" --results-dir "${RESULTS_DIR}" -algo "${a}"
         done
     done
     
@@ -61,7 +64,7 @@ for g in "${graphs[@]}"; do
                 for run in $(seq 1 $N_RUNS); do
                     echo ""
                     echo ">>> Running on: ${file} (threads=${t}, chunk_size=${c}), algo=${a}, run=${run}/${N_RUNS}"
-                    "${BIN}" "${file}" -n "${t}" -p0 "${c}" --results-dir "${RESULTS_DIR}" -algo "${a}"
+                    "${BIN}" "${file}" -n "${t}" -p0 "${c}" --weight-seed "${WEIGHT_SEED}" --results-dir "${RESULTS_DIR}" -algo "${a}"
                 done
             done 
         done

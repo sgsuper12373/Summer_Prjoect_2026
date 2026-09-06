@@ -29,6 +29,15 @@ def compile_results(input_dir):
             if missing_cols:
                 print(f"Skipping {file_path.name}: Missing grouping columns {missing_cols}")
                 continue
+
+            # One CSV represents one graph; every run must return its same MST
+            # weight. Refuse to aggregate inconsistent output as a median.
+            if 'weight' in df.columns and df['weight'].nunique(dropna=True) != 1:
+                print(
+                    f"Skipping {file_path.name}: inconsistent MST weights. "
+                    "Re-run with a fixed --weight-seed and investigate the algorithms."
+                )
+                continue
             
             # Group by configuration and calculate the median
             # numeric_only=True ensures we don't try to calculate medians on string columns (like graph names)

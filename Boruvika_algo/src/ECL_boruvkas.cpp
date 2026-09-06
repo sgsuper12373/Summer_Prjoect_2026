@@ -308,7 +308,7 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
 
 void print_usage() {
-    cerr << "USAGE: ./ecl_boruvkas <filename> -algo <name> [-n <threads>] [-p0 <chunk_size>] [--results-dir <path>]\n";
+    cerr << "USAGE: ./ecl_boruvkas <filename> -algo <name> [-n <threads>] [-p0 <chunk_size>] [--weight-seed <seed>] [--results-dir <path>]\n";
     cerr << "Algorithms (-algo): serial_full, serial_half, serial_split, omp_half, omp_intermediate\n";
     cerr << "Runs the selected algorithm once and appends results to <results_dir>/<testfile>_result.csv\n";
     cerr << "(results_dir defaults to 'Results/<YYYYMMDD_HHMMSS>').\n";
@@ -328,7 +328,7 @@ string timestamped_results_dir() {
 // Assign one random weight to each undirected edge.  ECL graphs normally store
 // an undirected edge twice in CSR form, so the reverse entry must receive the
 // same weight for the graph to remain undirected.
-void assign_random_weights(ECLgraph& G, int max_weight) {
+void assign_random_weights(ECLgraph& G, int max_weight, uint32_t seed) {
     if (G.edges == 0) {
         G.eweight = NULL;
         return;
@@ -342,8 +342,9 @@ void assign_random_weights(ECLgraph& G, int max_weight) {
 
     fill(G.eweight, G.eweight + G.edges, 0);
 
-    random_device seed;
-    mt19937 generator(seed());
+    // A deterministic seed ensures every configuration solves the same MST
+    // instance, even though each benchmark run is a separate process.
+    mt19937 generator(seed);
     uniform_int_distribution<int> distribution(1, max_weight);
 
     // Generate a weight once for every u--v pair with u <= v, then find and
@@ -380,6 +381,7 @@ int main(int argc, char* argv[]) {
 
     int num_threads = omp_get_max_threads();
     int chunk_size = 16;
+    uint32_t weight_seed = 20260907U;
     constexpr int MAX_WEIGHT = 50;
 
     if (const char* env_p0 = getenv("CHUNK_SIZE")) {
@@ -396,6 +398,17 @@ int main(int argc, char* argv[]) {
             num_threads = atoi(argv[++i]);
         } else if (arg == "-p0" && i + 1 < argc) {
             chunk_size = atoi(argv[++i]);
+        } else if (arg == "--weight-seed" && i + 1 < argc) {
+            try {
+                const unsigned long parsed_seed = stoul(argv[++i]);
+                if (parsed_seed > numeric_limits<uint32_t>::max()) {
+                    throw out_of_range("seed exceeds uint32_t range");
+                }
+                weight_seed = static_cast<uint32_t>(parsed_seed);
+            } catch (const exception&) {
+                cerr << "ERROR: --weight-seed must be an unsigned 32-bit integer\n";
+                return 1;
+            }
         } else if ((arg == "--results-dir" || arg == "-r") && i + 1 < argc) {
             results_dir = fs::path(argv[++i]);
         } else if (arg == "-algo" && i + 1 < argc) {
@@ -435,8 +448,10 @@ int main(int argc, char* argv[]) {
 
 
     // The ECL MST paper assigns random weights to unweighted graphs (page 6).
-    if (G.eweight == NULL) {
-        assign_random_weights(G, MAX_WEIGHT);
+    // Fixed seeding makes those weights reproducible for correctness checks.
+    const bool generated_weights = (G.eweight == NULL);
+    if (generated_weights) {
+        assign_random_weights(G, MAX_WEIGHT, weight_seed);
     }
 
     fs::create_directories(results_dir);
@@ -450,6 +465,9 @@ int main(int argc, char* argv[]) {
     cout << "OMP threads: " << num_threads << "\n";
     cout << "Chunk size: " << chunk_size << "\n";
     cout << "Algorithm: " << algo_name << "\n";
+    if (generated_weights) {
+        cout << "Generated weight seed: " << weight_seed << "\n";
+    }
     cout << "--------------------------------------------------\n";
 
     map<string, function<long long(ECLgraph)>> methods;
@@ -497,10 +515,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     if (write_header) {
-        csv << "graph,algorithm,threads,chunk_size_p0,weight,graph_load_time, total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s\n";
+        csv << "graph,algorithm,threads,chunk_size_p0,weight,weight_seed,graph_load_time, total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s\n";
     }
     csv << fixed << setprecision(9);
     csv << stem << "," << algo_name << "," << num_threads << "," << chunk_size << "," << weight << ","
+        << (generated_weights ? weight_seed : 0) << ","
         << G_load_time << ", " 
         << total_time << "," << phase_timer.iterations << "," 
         << phase_timer.phase0 << "," << phase_timer.phase1 << "," 

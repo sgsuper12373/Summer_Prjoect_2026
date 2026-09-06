@@ -13,6 +13,7 @@
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 from pathlib import Path
 
 # =====================================================================
@@ -47,6 +48,33 @@ VIS_DIR = COMPILED_DIR / 'graph_visualize'
 THREADS_VIS_DIR = COMPILED_DIR / 'threads_througput_graph_analysis'
 CHUNK_VIS_DIR = COMPILED_DIR / 'chunk_througput_analysis'
 NUM_THREADS = [1, 2, 4, 8, 12, 16]
+
+
+def add_geometric_mean_row(pivot_df):
+    """Append a comparable geometric-mean throughput summary to a chart table.
+
+    A graph is included only when it has a finite, positive throughput value for
+    every series in the chart. This gives every bar in the final summary group
+    the same set of graph datasets.
+    """
+    valid_rows = pivot_df.replace([np.inf, -np.inf], np.nan).dropna(how='any')
+    valid_rows = valid_rows[(valid_rows > 0).all(axis=1)]
+
+    if valid_rows.empty:
+        print('WARNING: No complete positive rows available for geometric mean.')
+        return pivot_df
+
+    result = pivot_df.copy()
+    result.loc['Geometric Mean'] = np.exp(np.log(valid_rows).mean(axis=0))
+    return result
+
+
+def highlight_geometric_mean_label(ax):
+    """Visually distinguish the summary group from individual graph datasets."""
+    for label in ax.get_xticklabels():
+        if label.get_text() == 'Geometric Mean':
+            label.set_fontweight('bold')
+
 
 def generate_visualizations():
     # 1. Setup output directory
@@ -108,10 +136,12 @@ def generate_visualizations():
         # Reorder columns to ensure consistent order in the bar chart
         cols = [alg for alg in TARGET_ALGOS if alg in pivot_df.columns]
         pivot_df = pivot_df[cols]
+        pivot_df = add_geometric_mean_row(pivot_df)
         
         # 8. Plotting
         # Pandas plot wrapper automatically creates grouped bar charts
         ax = pivot_df.plot(kind='bar', figsize=(14, 6), width=0.75, zorder=3)
+        highlight_geometric_mean_label(ax)
         
         plt.title(f'Algorithm Throughput Comparison (Threads: {t}, Chunk Size: {c})', fontsize=14, pad=15)
         plt.xlabel('Graph Dataset', fontsize=12)
@@ -177,8 +207,10 @@ def generate_thread_throughput_visualizations():
                 index='graph', columns='threads', values='throughput_Meps'
             ).sort_index()
             pivot_df = pivot_df.reindex(sorted(pivot_df.columns), axis=1)
+            pivot_df = add_geometric_mean_row(pivot_df)
 
             ax = pivot_df.plot(kind='bar', figsize=(16, 7), width=0.8, zorder=3)
+            highlight_geometric_mean_label(ax)
             chunk_note = ' (not used by serial)' if algorithm == 'serial_half' else ''
             ax.set_title(
                 f'{algorithm} Throughput by Thread Count '
@@ -249,8 +281,10 @@ def generate_chunk_throughput_visualizations():
                 index='graph', columns='chunk_size_p0', values='throughput_Meps'
             ).sort_index()
             pivot_df = pivot_df.reindex(sorted(pivot_df.columns), axis=1)
+            pivot_df = add_geometric_mean_row(pivot_df)
 
             ax = pivot_df.plot(kind='bar', figsize=(16, 7), width=0.8, zorder=3)
+            highlight_geometric_mean_label(ax)
             thread_note = ' (not used by serial)' if algorithm == 'serial_half' else ''
             ax.set_title(
                 f'{algorithm} Throughput by Chunk Size '

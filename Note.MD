@@ -51,8 +51,8 @@ hence chunksize 16 should be performaing better
 - **DONE:** for each algorithm create one plot, y-axis should throughput, x axis each group is for one graph . in each group we will have number of theads used joint bars 
 - **DONE** same as above algo + chunk size 
 -  **DONE** prepare another plot where you fix the number of theads to the best performing config and now vary the chunk sizes 
-- add geometric mean bar in the last of graph 
-- One more plot-> choose the best number of threads config, and best chunk size and 
+- **DONE** add geometric mean bar in the last of graph 
+- **DONE** One more plot-> choose the best number of threads config, and best chunk size and 
         -> y-axis is throughput 
         -> x-axis each each group we have two bars for algo, geomean at the end 
 
