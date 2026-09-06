@@ -46,12 +46,12 @@ hence chunksize 16 should be performaing better
 
 
 # TODO FOR 31-8-2026 
-- disable all hyperthreading. use last 8 cores only -> taskset -c 8-15 ./run_all_tests.sh
-- Use c++ random number genrator for the unweighted graphs -> This needs to be done 
-- for each algorithm create one plot, y-axis should throughput, x axis each group is for one graph . in each group we will have number of theads used joint bars 
-- same as above algo + chunk size 
-- prepare another plot where you fix the number of theads to the best performing config and now vary the chunk sizes 
-- at geometric mean bar in the last of graph 
+- **DONE:** disable all hyperthreading. use last 8 cores only -> taskset -c 8-15 ./run_all_tests.sh
+- **DONE:** Use c++ random number genrator for the unweighted graphs -> This needs to be done 
+- **DONE:** for each algorithm create one plot, y-axis should throughput, x axis each group is for one graph . in each group we will have number of theads used joint bars 
+- **DONE** same as above algo + chunk size 
+-  **DONE** prepare another plot where you fix the number of theads to the best performing config and now vary the chunk sizes 
+- add geometric mean bar in the last of graph 
 - One more plot-> choose the best number of threads config, and best chunk size and 
         -> y-axis is throughput 
         -> x-axis each each group we have two bars for algo, geomean at the end 
@@ -60,3 +60,23 @@ hence chunksize 16 should be performaing better
 - read and understand ECL_MST 
 - get their code running on GPU, and then plan baseline code. 
 - analyze memory access patters for better memory coeasling, thread divergence, shared memory, bank conflicts analysis
+
+
+# CHECK THE CACHE LINE SIZE 
+- command to check 
+
+                for cpu in {0..7}; do
+                echo -n "CPU $cpu: "
+                cat /sys/devices/system/cpu/cpu$cpu/cache/index0/coherency_line_size
+                done
+
+- expected output 
+
+        CPU 0: 64       
+        CPU 1: 64       
+        CPU 2: 64       
+        CPU 3: 64       
+        CPU 4: 64       
+        CPU 5: 64       
+        CPU 6: 64       
+        CPU 7: 64       
