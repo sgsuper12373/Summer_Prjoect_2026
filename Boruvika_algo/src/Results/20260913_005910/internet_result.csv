@@ -1,0 +1,2 @@
+graph,algorithm,threads,chunk_size_p0,weight,weight_seed,graph_load_time, total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s
+internet,omp_intermediate,16,12,951569,0,0.067451856, 0.038766129,6,0.003594097,0.019085648,0.006972494,0.005463364

@@ -136,7 +136,6 @@ long long  Boruvka_CPU(ECLgraph G )  {
     return MST_Weight;
 }
 
-
 template <typename DSU_type>
 long long boruvka_omp( ECLgraph G, int chunk_size) {
     DSU_type dsu(G.nodes);
@@ -232,7 +231,7 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
     int prev_comps = INT_MAX; 
     int curr_comps = G.nodes; 
 
-    vector<int> comp(G.nodes); 
+    // vector<int> comp(G.nodes);  // we don't need to do the G.nodes as we can directly get it for dsu.find(u) in O(1)
     vector<unsigned long long> cheapest(G.nodes); 
     const unsigned long long INF = ~0ULL;
 
@@ -245,7 +244,7 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
         auto start = high_resolution_clock::now(); 
         #pragma omp parallel for schedule(static,chunk_size)
         for( int u = 0 ; u < G.nodes; u++ ){
-            comp[u] = dsu.G_find(u); 
+            // comp[u] = dsu.G_find(u); 
             cheapest[u] = INF; 
         }
         auto end = high_resolution_clock::now(); 
@@ -259,10 +258,10 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
             for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
                 int v = G.nlist[i]; 
 
-                if( comp[u] == comp[v] ) continue;
+                if( dsu.G_find(u) == dsu.G_find(v) ) continue;
 
                 unsigned long long key = edgeKey(G.eweight[i], i);
-                atomicMinU64(&cheapest[comp[u]], key);
+                atomicMinU64(&cheapest[dsu.G_find(u)], key);
             }
 
         }
