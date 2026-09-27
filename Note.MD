@@ -89,3 +89,6 @@ hence chunksize 16 should be performaing better
 - ballot and syn_warp understand 
 - atleast two of omp implementation running on my system 
 - compare the performance of our version using best performing config 
+
+
+

@@ -79,6 +79,20 @@ static inline unsigned long long edgeKey(int weight, int edge_index){
            static_cast<unsigned int>(edge_index);
 }
 
+/**
+ * @brief Generates a key for a candidate edge target vertex.
+ *
+ * The intermediate implementation scans each undirected edge once and
+ * considers it for both endpoint components.  An adjacency-list edge index
+ * identifies the target for only one endpoint, so this variant stores the
+ * target vertex in the lower 32 bits instead.
+ */
+static inline unsigned long long edgeTargetKey(int weight, int target){
+    const unsigned int ordered_weight = static_cast<unsigned int>(weight) ^ 0x80000000u;
+    return (static_cast<unsigned long long>(ordered_weight) << 32) |
+           static_cast<unsigned int>(target);
+}
+
 // Template function for Boruvka's algorithm, accepting the DSU type
 template <typename DSU_Type>
 long long  Boruvka_CPU(ECLgraph G )  {
@@ -255,13 +269,28 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
         start = high_resolution_clock::now(); 
         #pragma omp parallel for schedule(guided) 
         for( int u = 0 ; u < G.nodes; u++ ){
+            // ECL stores an undirected edge twice, once as u -> v and once
+            // as v -> u.  The component of u is unchanged during phase 1,
+            // so find it once instead of recomputing it for every edge.
+            const int comp_u = dsu.G_find(u);
+
             for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
                 int v = G.nlist[i]; 
 
-                if( dsu.G_find(u) == dsu.G_find(v) ) continue;
+                // Process only one copy of every undirected edge.  The edge
+                // is still considered for both endpoint components below.
+                // This assumes the input graph is represented by symmetric
+                // CSR adjacency lists, as required by the MST algorithm.
+                if( u >= v ) continue;
 
-                unsigned long long key = edgeKey(G.eweight[i], i);
-                atomicMinU64(&cheapest[dsu.G_find(u)], key);
+                const int comp_v = dsu.G_find(v);
+                if( comp_u == comp_v ) continue;
+
+                // Store the opposite endpoint directly.  One adjacency entry
+                // cannot be reused as the candidate for both components,
+                // because G.nlist[i] is the destination only for u's side.
+                atomicMinU64(&cheapest[comp_u], edgeTargetKey(G.eweight[i], v));
+                atomicMinU64(&cheapest[comp_v], edgeTargetKey(G.eweight[i], u));
             }
 
         }
@@ -278,9 +307,8 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
         for( int c = 0 ; c <  G.nodes; c++ ){
             if( cheapest[c] == INF ) continue;
 
-            int i = (int)(cheapest[c] & 0xffffffffu);
+            int v = (int)(cheapest[c] & 0xffffffffu);
             int w = static_cast<int>((cheapest[c] >> 32) ^ 0x80000000u);
-            int v = G.nlist[i];
 
             if( dsu.G_union(c, v) ) {
                 roundW += w;
