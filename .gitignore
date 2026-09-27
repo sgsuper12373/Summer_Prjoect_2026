@@ -51,3 +51,5 @@ __pycache__/
 
 #ignore the baseline algo as they might increase in size 
 Boruvika_algo/baselines/Indigo3Suite/
+
+ScratchPad.MD
