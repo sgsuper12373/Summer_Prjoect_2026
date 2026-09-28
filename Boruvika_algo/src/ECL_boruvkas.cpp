@@ -161,6 +161,10 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
     vector<unsigned long long> cheapest(G.nodes);
     const unsigned long long INF = ~0ULL;
 
+    // active[u] == 0 means every neighbour of u is already in u's component.
+    // Components only ever merge, so such a vertex never needs a rescan.
+    vector<char> active(G.nodes, 1);
+
     while( prev_comps != curr_comps  ){
         prev_comps = curr_comps;
         phase_timer.iterations++;
@@ -193,15 +197,20 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
         start = high_resolution_clock::now();
         #pragma omp parallel for schedule(guided)
         for( int u = 0 ; u < G.nodes; u++ ){
+            if( !active[u] ) continue;
+
             int ult_u = comp[u];
+            bool has_outgoing = false;
             for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
                 int v = G.nlist[i];
 
                 if( ult_u == comp[v] ) continue; // same comp, skip
+                has_outgoing = true;
 
                 unsigned long long key = edgeKey(G.eweight[i], i);
                 atomicMinU64(&cheapest[ult_u], key);
             }
+            if( !has_outgoing ) active[u] = 0;
         }
         end = high_resolution_clock::now(); 
         phase_timer.phase1 += duration<double>(end - start).count();
@@ -231,6 +240,9 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
         MST_Weight += roundW;
         curr_comps -= merges;
 
+        // One component left (or nothing merged): skip the extra full pass
+        // that the prev_comps != curr_comps check would otherwise need.
+        if( curr_comps == 1 || merges == 0 ) break;
     }
 
     return MST_Weight; 
@@ -246,33 +258,31 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
     int curr_comps = G.nodes; 
 
     // vector<int> comp(G.nodes);  // we don't need to do the G.nodes as we can directly get it for dsu.find(u) in O(1)
-    vector<unsigned long long> cheapest(G.nodes); 
     const unsigned long long INF = ~0ULL;
+    // PHASE_0 is gone: cheapest is reset once here, and after that every
+    // entry is set back to INF by phase 2 right after it is consumed.
+    vector<unsigned long long> cheapest(G.nodes, INF);
+
+    // active[u] == 0 means none of u's edges (v > u) crosses a component
+    // boundary.  Components only ever merge, so such a vertex stays inactive.
+    vector<char> active(G.nodes, 1);
 
     while( prev_comps != curr_comps ){
-        
+
         prev_comps = curr_comps;
         phase_timer.iterations++;
 
-        // PHASE_0 flatten the components ids and reset the cheapest
-        auto start = high_resolution_clock::now(); 
-        #pragma omp parallel for schedule(static,chunk_size)
-        for( int u = 0 ; u < G.nodes; u++ ){
-            // comp[u] = dsu.G_find(u); 
-            cheapest[u] = INF; 
-        }
-        auto end = high_resolution_clock::now(); 
-        phase_timer.phase0 += duration<double>(end-start).count();
-
-
         // PHASE_1 find the cheapest outgoing edge from each component
-        start = high_resolution_clock::now(); 
-        #pragma omp parallel for schedule(guided) 
+        auto start = high_resolution_clock::now();
+        #pragma omp parallel for schedule(guided)
         for( int u = 0 ; u < G.nodes; u++ ){
+            if( !active[u] ) continue;
+
             // ECL stores an undirected edge twice, once as u -> v and once
             // as v -> u.  The component of u is unchanged during phase 1,
             // so find it once instead of recomputing it for every edge.
             const int comp_u = dsu.G_find(u);
+            bool has_outgoing = false;
 
             for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
                 int v = G.nlist[i]; 
@@ -285,6 +295,7 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
                 const int comp_v = dsu.G_find(v);
                 if( comp_u == comp_v ) continue;
+                has_outgoing = true;
 
                 // Store the opposite endpoint directly.  One adjacency entry
                 // cannot be reused as the candidate for both components,
@@ -293,8 +304,9 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
                 atomicMinU64(&cheapest[comp_v], edgeTargetKey(G.eweight[i], u));
             }
 
+            if( !has_outgoing ) active[u] = 0;
         }
-        end = high_resolution_clock::now(); 
+        auto end = high_resolution_clock::now();
         phase_timer.phase1 += duration<double>(end-start).count();
 
         // PHASE_2: merge comps
@@ -307,8 +319,11 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
         for( int c = 0 ; c <  G.nodes; c++ ){
             if( cheapest[c] == INF ) continue;
 
-            int v = (int)(cheapest[c] & 0xffffffffu);
-            int w = static_cast<int>((cheapest[c] >> 32) ^ 0x80000000u);
+            const unsigned long long key = cheapest[c];
+            cheapest[c] = INF; // reset for the next round (replaces phase 0)
+
+            int v = (int)(key & 0xffffffffu);
+            int w = static_cast<int>((key >> 32) ^ 0x80000000u);
 
             if( dsu.G_union(c, v) ) {
                 roundW += w;
@@ -320,6 +335,10 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
         MST_Weight += roundW;
         curr_comps -= merges;
+
+        // One component left (or nothing merged): skip the extra full pass
+        // that the prev_comps != curr_comps check would otherwise need.
+        if( curr_comps == 1 || merges == 0 ) break;
 
         // PHASE_3 flatten the tree after unino operations
         start = high_resolution_clock::now(); 
@@ -335,11 +354,13 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
 
 void print_usage() {
-    cerr << "USAGE: ./ecl_boruvkas <filename> -algo <name> [-n <threads>] [-p0 <chunk_size>] [--weight-seed <seed>] [--results-dir <path>]\n";
+    cerr << "USAGE: ./ecl_boruvkas <filename> -algo <name> [-n <threads>] [-p0 <chunk_size>] [--weight-seed <seed>] [--results-dir <path>] [--ref-weights <path>]\n";
     cerr << "Algorithms (-algo): serial_full, serial_half, serial_split, omp_half, omp_intermediate\n";
     cerr << "Runs the selected algorithm once and appends results to <results_dir>/<testfile>_result.csv\n";
     cerr << "(results_dir defaults to 'Results/<YYYYMMDD_HHMMSS>').\n";
     cerr << "If -p0 is not provided, reads from CHUNK_SIZE environment variable.\n";
+    cerr << "Reference MST weights are cached in --ref-weights (default 'Results/reference_weights.csv');\n";
+    cerr << "serial_full is only run for graphs missing from that file.\n";
 }
 
 string timestamped_results_dir() {
@@ -437,6 +458,56 @@ void assign_random_weights(ECLgraph& G, int max_weight, uint32_t seed) {
     // }
 }
 
+/**
+ * @brief Look up the reference MST weight of a graph in the cache file.
+ *
+ * The cache is a CSV with one line per graph instance:
+ *     graph,weight_seed,nodes,edges,mst_weight
+ * The seed, node and edge counts are part of the key so a graph with another
+ * seed (or a re-converted file) never matches a stale entry.
+ *
+ * @return true and sets mst_weight if an entry exists
+ */
+bool lookup_reference_weight(const fs::path& ref_file, const string& graph, uint32_t seed,
+                             int nodes, int edges, long long& mst_weight) {
+    ifstream input(ref_file);
+    if (!input) return false;
+
+    string line;
+    getline(input, line); // header
+    while (getline(input, line)) {
+        istringstream row(line);
+        string name, seed_s, nodes_s, edges_s, weight_s;
+        if (!getline(row, name, ',') || !getline(row, seed_s, ',') || !getline(row, nodes_s, ',') ||
+            !getline(row, edges_s, ',') || !getline(row, weight_s, ',')) continue;
+
+        try {
+            if (name == graph && stoul(seed_s) == seed && stoi(nodes_s) == nodes &&
+                stoi(edges_s) == edges) {
+                mst_weight = stoll(weight_s);
+                return true;
+            }
+        } catch (const exception&) {
+            continue; // skip malformed lines
+        }
+    }
+    return false;
+}
+
+void store_reference_weight(const fs::path& ref_file, const string& graph, uint32_t seed,
+                            int nodes, int edges, long long mst_weight) {
+    if (ref_file.has_parent_path()) fs::create_directories(ref_file.parent_path());
+    const bool write_header = !fs::exists(ref_file) || fs::file_size(ref_file) == 0;
+
+    ofstream output(ref_file, ios::app);
+    if (!output) {
+        cerr << "WARNING: could not write reference weight to '" << ref_file.string() << "'\n";
+        return;
+    }
+    if (write_header) output << "graph,weight_seed,nodes,edges,mst_weight\n";
+    output << graph << "," << seed << "," << nodes << "," << edges << "," << mst_weight << "\n";
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         print_usage();
@@ -453,6 +524,7 @@ int main(int argc, char* argv[]) {
     }
 
     fs::path results_dir = timestamped_results_dir();
+    fs::path ref_weights_file = fs::path("Results") / "reference_weights.csv";
     string filename = argv[1];
     string algo_name = "";
 
@@ -475,6 +547,8 @@ int main(int argc, char* argv[]) {
             }
         } else if ((arg == "--results-dir" || arg == "-r") && i + 1 < argc) {
             results_dir = fs::path(argv[++i]);
+        } else if (arg == "--ref-weights" && i + 1 < argc) {
+            ref_weights_file = fs::path(argv[++i]);
         } else if (arg == "-algo" && i + 1 < argc) {
             algo_name = argv[++i];
         } else {
@@ -557,10 +631,19 @@ int main(int argc, char* argv[]) {
     // Run all available serial implementations as correctness references.
     // Their timings are intentionally not included in total_time because the
     // benchmark time belongs only to the algorithm selected by the user.
-    cout << "Validating MST result with serial algorithms...\n";
-    const long long serial_full_weight = methods["serial_full"](G);
+    // The reference weight is cached per graph instance, so serial_full only
+    // runs the first time a graph (with this seed) is seen.
+    const uint32_t ref_seed = generated_weights ? weight_seed : 0;
+    long long serial_full_weight = 0;
+    if (lookup_reference_weight(ref_weights_file, stem, ref_seed, G.nodes, G.edges, serial_full_weight)) {
+        cout << "Using cached reference weight from " << ref_weights_file.string() << "\n";
+    } else {
+        cout << "No cached reference weight, validating with serial_full...\n";
+        serial_full_weight = methods["serial_full"](G);
+        store_reference_weight(ref_weights_file, stem, ref_seed, G.nodes, G.edges, serial_full_weight);
+    }
 
-    const bool results_matched = (weight == serial_full_weight); 
+    const bool results_matched = (weight == serial_full_weight);
 
     cout << "serial_full weight: " << serial_full_weight << "\n"
          << "Results matched: " << (results_matched ? 1 : 0) << "\n";

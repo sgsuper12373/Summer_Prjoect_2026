@@ -1,60 +1,44 @@
-#include<iostream> 
-#include<bits/stdc++.h> 
+#include <iostream>   // keep before ECLgraph.h (its printGraphInfo uses std::cout)
+#include <fstream>
+#include <filesystem>
+#include <vector>
+#include <algorithm>
+#include <string>
 #include "../src/ECLgraph.h"
 
-using namespace std ; 
-namespace fs = std::filesystem; 
+using namespace std;
+namespace fs = std::filesystem;
 
-void storeGraphInfo(const string& path, ofstream& file) {
-
-    ECLgraph G = readECLgraph(path.c_str());
-
-    // main information needed to store 
-    int nodes = G.nodes;
-    int edges = G.edges;
+static void storeGraphInfo(const fs::path& p, ofstream& csv) {
+    ECLgraph G = readECLgraph(p.string().c_str());
     bool weighted = (G.eweight != nullptr);
 
-    // compute the size after the extraction which will be loaded into the memory
-    size_t sizeAfterExtract =
-        2 * sizeof(int) +
-        (nodes + 1) * sizeof(int) +
-        edges * sizeof(int) +
-        (weighted ? edges * sizeof(int) : 0);
-
-    // write the information to the required file 
-    file << "# File: " << path << "   \n";
-    file << "Nodes: " << nodes << "   \n";
-    file << "Edges: " << edges << "   \n";
-    file << "Weighted: " << weighted << "    \n";
-    file << "Size after extraction: "
-         << sizeAfterExtract / (1024.0 * 1024.0)
-         << " MB    \n***\n";
-
+    csv << p.stem().string() << ',' << G.nodes << ',' << G.edges << ','
+        << (weighted ? 1 : 0) << '\n';
 
     freeECLgraph(G);
 }
 
+int main(int argc, char* argv[]) {
+    fs::path dir   = (argc > 1) ? argv[1] : "./";
+    string outPath = (argc > 2) ? argv[2] : "./graph_info.csv";
 
-int main() {
-    // current directtory ( can repalce with other directory)
-    string path = "./"; 
-    string storePath = "./Graphinfo.MD"; 
-    ofstream file(storePath);
+    vector<fs::path> files;
+    for (auto const& entry : fs::directory_iterator(dir))
+        if (entry.is_regular_file() && entry.path().extension() == ".egr")
+            files.push_back(entry.path());
+    sort(files.begin(), files.end());
 
-    if (!file) {
-        std::cerr << "Failed to open file\n";
-        exit(1);
+    ofstream csv(outPath);
+    if (!csv) {
+        cerr << "Failed to open " << outPath << "\n";
+        return 1;
     }
 
-    // loop throught the current directory and skip the files that are not in .egr format
-    for( auto const& entry : fs::directory_iterator(path)){
-        string path = entry.path(); 
-        cout << path << "\n";
-
-        // check if given file is .egr and then procced to store the information 
-        if( path.find(".egr") != string::npos ){
-            storeGraphInfo( path, file); 
-        }
+    csv << "graph,nodes,edges,weighted\n";
+    for (auto const& f : files) {
+        cout << f << "\n";
+        storeGraphInfo(f, csv);
     }
-    return 0  ; 
+    return 0;
 }

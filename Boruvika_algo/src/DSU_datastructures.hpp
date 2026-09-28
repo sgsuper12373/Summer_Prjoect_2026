@@ -3,6 +3,14 @@
 #include<omp.h> 
 using namespace std ;
 
+// Bounds checks cost a branch on every find/union in the parallel hot loops.
+// They are compiled only when building with -DDSU_DEBUG.
+#ifdef DSU_DEBUG
+#define DSU_CHECK_NODE(cond, msg) do{ if(!(cond)){ cerr << msg; exit(1); } }while(0)
+#else
+#define DSU_CHECK_NODE(cond, msg) do{}while(0)
+#endif
+
 /**
  * @brief This is the base class for implemetation of DSU
  *        Other version of DSU will be extending this class.
@@ -66,7 +74,7 @@ public:
 }; 
 
 
-class DSU_full_cpu: public DSU{
+class DSU_full_cpu final: public DSU{
 public: 
 
 
@@ -142,7 +150,7 @@ public:
 }; 
 
 
-class DSU_half_cpu: public DSU{
+class DSU_half_cpu final: public DSU{
 public: 
     DSU_half_cpu( int N ): DSU(N){} 
 
@@ -215,7 +223,7 @@ public:
     }
 }; 
 
-class DSU_split_cpu: public DSU{
+class DSU_split_cpu final: public DSU{
 public: 
     DSU_split_cpu(int N): DSU(N){}
 
@@ -286,7 +294,7 @@ public:
     }
 }; 
 
-class DSU_half_omp: public DSU{
+class DSU_half_omp final: public DSU{
 public: 
     DSU_half_omp( int N ) : DSU(N) {}
 
@@ -300,10 +308,7 @@ public:
      */
     int G_find( int u ) override {
 
-        if( !isValidNode(u) ){
-            cerr << "Error: invalid Node: " << u << "\n"; 
-            exit(1); 
-        }
+        DSU_CHECK_NODE(isValidNode(u), "Error: invalid Node: " << u << "\n");
 
         while(true){
             int p = __atomic_load_n(&parent[u], __ATOMIC_RELAXED);
@@ -319,10 +324,7 @@ public:
 
 
     bool G_union( int u, int v) override {
-        if( !isValidNode(u) || !isValidNode(v)){
-            cerr << "ERROR: Invalid node/ node out of range"; 
-            exit(1); 
-        }
+        DSU_CHECK_NODE(isValidNode(u) && isValidNode(v), "ERROR: Invalid node/ node out of range\n");
 
         while(true){
             u = G_find(u); 
@@ -370,7 +372,7 @@ public:
  *  int O(1) time giving pahse 1 O(nodes) complexity which scales better with high number of threads
  * 
  */
-class DSU_intermediate_omp: public DSU{
+class DSU_intermediate_omp final: public DSU{
 public: 
     DSU_intermediate_omp(int N) : DSU(N){}
 
@@ -381,18 +383,12 @@ public:
      * @return int 
      */
     int G_find( int u ) override {
-        if( !isValidNode(u) ){
-            cerr << "Error : invalid Node : " << u << "\n"; 
-            exit(1); 
-        }
+        DSU_CHECK_NODE(isValidNode(u), "Error : invalid Node : " << u << "\n");
         return parent[u]; 
     }
 
     bool G_union(int u, int v ) override {
-        if( !isValidNode(u) || !isValidNode(v) ){
-            cerr << "Error : Invalid Node " << u << " OR " << v << "\n"; 
-            exit(1); 
-        }
+        DSU_CHECK_NODE(isValidNode(u) && isValidNode(v), "Error : Invalid Node " << u << " OR " << v << "\n");
 
 
         while(true){
@@ -416,7 +412,7 @@ public:
         return 0; 
     }
 
-    bool isInSameComp(int u , int v ) {
+    bool isInSameComp(int u , int v ) override {
         return parent[u] == parent[v]; 
     }
 
