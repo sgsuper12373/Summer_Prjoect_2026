@@ -352,6 +352,43 @@ string timestamped_results_dir() {
     return (fs::path("Results") / timestamp.str()).string();
 }
 
+/**
+ * @brief Add the validation column to an existing results file when needed.
+ *
+ * Older result files do not contain results_matched.  Existing rows were not
+ * validated by this version, so they receive 0 when the file is migrated.
+ */
+void ensure_results_matched_column(const fs::path& csv_file) {
+    if (!fs::exists(csv_file) || fs::file_size(csv_file) == 0) return;
+
+    ifstream input(csv_file);
+    string header;
+    if (!getline(input, header)) return;
+
+    if (header.find("results_matched") != string::npos) return;
+
+    vector<string> lines;
+    lines.push_back(header + ",results_matched");
+
+    string line;
+    while (getline(input, line)) {
+        if (!line.empty()) line += ",0";
+        lines.push_back(line);
+    }
+    input.close();
+
+    ofstream output(csv_file, ios::trunc);
+    if (!output) {
+        cerr << "WARNING: could not update CSV header in '" << csv_file.string()
+             << "'\n";
+        return;
+    }
+
+    for (const string& current_line : lines) {
+        output << current_line << "\n";
+    }
+}
+
 // Assign one random weight to each undirected edge.  ECL graphs normally store
 // an undirected edge twice in CSR form, so the reverse entry must receive the
 // same weight for the graph to remain undirected.
@@ -517,6 +554,17 @@ int main(int argc, char* argv[]) {
     end = high_resolution_clock::now();
     double total_time = duration<double>(end - start).count();
 
+    // Run all available serial implementations as correctness references.
+    // Their timings are intentionally not included in total_time because the
+    // benchmark time belongs only to the algorithm selected by the user.
+    cout << "Validating MST result with serial algorithms...\n";
+    const long long serial_full_weight = methods["serial_full"](G);
+
+    const bool results_matched = (weight == serial_full_weight); 
+
+    cout << "serial_full weight: " << serial_full_weight << "\n"
+         << "Results matched: " << (results_matched ? 1 : 0) << "\n";
+
     cout << left << setw(18) << algo_name
          << "  " << fixed << setprecision(6) << setw(10) << total_time << " s";
 
@@ -532,6 +580,8 @@ int main(int argc, char* argv[]) {
     }
     cout << "\n";
 
+    ensure_results_matched_column(csv_file);
+
     bool write_header = true;
     if (fs::exists(csv_file)) write_header = (fs::file_size(csv_file) == 0);
     
@@ -542,7 +592,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     if (write_header) {
-        csv << "graph,algorithm,threads,chunk_size_p0,weight,weight_seed,graph_load_time, total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s\n";
+        csv << "graph,algorithm,threads,chunk_size_p0,weight,weight_seed,graph_load_time, total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s,results_matched\n";
     }
     csv << fixed << setprecision(9);
     csv << stem << "," << algo_name << "," << num_threads << "," << chunk_size << "," << weight << ","
@@ -550,7 +600,8 @@ int main(int argc, char* argv[]) {
         << G_load_time << ", " 
         << total_time << "," << phase_timer.iterations << "," 
         << phase_timer.phase0 << "," << phase_timer.phase1 << "," 
-        << phase_timer.phase2 << "," << phase_timer.phase3 << "\n";
+        << phase_timer.phase2 << "," << phase_timer.phase3 << ","
+        << (results_matched ? 1 : 0) << "\n";
     csv.close();
 
     cout << "--------------------------------------------------\n";

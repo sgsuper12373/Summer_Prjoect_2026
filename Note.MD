@@ -92,3 +92,21 @@ hence chunksize 16 should be performaing better
 
 
 
+OMP_PLACES — defines the pool of "slots" threads can go into
+
+It tells OpenMP what a "place" means on your hardware, before it decides how to spread threads across them. Common values:
+
+cores — each place is one physical core. On a core with hyperthreading, a "place" still means the whole core (both hardware threads bundled together as one unit).
+threads — each place is one hardware thread (logical CPU). On a hyperthreaded core, this exposes both HT siblings as two separate places.
+sockets — each place is a whole CPU socket (irrelevant for you, single-socket laptop).
+You can also give an explicit list, e.g. OMP_PLACES="{0},{1},{2},{3}" to hand-pick exact logical CPU IDs — useful when you want tight control matching your P-core/E-core split.
+OMP_PROC_BIND — controls whether threads stay where they're put
+
+This decides the binding policy once places are defined:
+
+close — pack threads into places near each other, in order (thread 0 → place 0, thread 1 → place 1, etc.) — keeps threads clustered, good for minimizing cross-core communication latency.
+spread — distribute threads as far apart as possible across places, maximizing per-thread cache/memory bandwidth — good when each thread wants its own resources rather than sharing.
+true — bind threads to places but don't specify a placement strategy (implementation picks).
+false (default when unset) — threads can migrate freely between cores at the OS scheduler's discretion, which is exactly the noise your benchmarking methodology is trying to eliminate.
+
+OMP_PLACES=cores OMP_PROC_BIND=close taskset -c 8-15 ./scripts/run_uminho_tests.sh
