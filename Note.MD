@@ -85,10 +85,10 @@ hence chunksize 16 should be performaing better
 
 # 9-9-2026
 
-- Read ECL-MST read fully
-- ballot and syn_warp understand 
-- atleast two of omp implementation running on my system 
-- compare the performance of our version using best performing config 
+- Read ECL-MST read fully  -> DONE 
+- ballot and syn_warp understand  
+- atleast two of omp implementation running on my system  -> ONE done (Uminho)
+- compare the performance of our version using best performing config  ( DONE, Intermediate is performing better)
 
 
 
@@ -110,3 +110,14 @@ true — bind threads to places but don't specify a placement strategy (implemen
 false (default when unset) — threads can migrate freely between cores at the OS scheduler's discretion, which is exactly the noise your benchmarking methodology is trying to eliminate.
 
 OMP_PLACES=cores OMP_PROC_BIND=close taskset -c 8-15 ./scripts/run_uminho_tests.sh
+
+
+
+
+
+29-9-2026 
+- Lonestar or PBBS based on which ever is the latest, get it to running and add results to common speedup and throghput graphs. 
+- Create the account on the HPC.Figures out what is number of cores in given node without HT and keep them as max 
+- Prepare high level version of report and send to anju ma'am by the date 2nd oct and final report by the 6th oct. 
+- Meet on monday (5th oct)
+
