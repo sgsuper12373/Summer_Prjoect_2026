@@ -25,6 +25,9 @@ graphs=( "2d-2e20.sym.egr"  "citationCiteseer.egr"  "delaunay_n24.egr"  "r4-2e23
 
 threads=(1 2 4 8 12 16)
 chunks=(12 16 20)
+# Phase 1 schedules as "<kind>:<chunk>" (chunk 0 = OpenMP default). Add
+# entries such as "guided:0" or "dynamic:1024" to sweep them.
+p1_scheds=("dynamic:256")
 algo=("serial_half" "omp_half" "omp_intermediate")
 N_RUNS=9
 # Unweighted ECL graphs use this deterministic seed. Set WEIGHT_SEED before
@@ -60,13 +63,15 @@ for g in "${graphs[@]}"; do
     # Run parallel algorithms for different thread and chunk configurations
     for t in "${threads[@]}"; do
         for c in "${chunks[@]}"; do
+          for s in "${p1_scheds[@]}"; do
             for a in "omp_half" "omp_intermediate"; do 
                 for run in $(seq 1 $N_RUNS); do
                     echo ""
-                    echo ">>> Running on: ${file} (threads=${t}, chunk_size=${c}), algo=${a}, run=${run}/${N_RUNS}"
-                    "${BIN}" "${file}" -n "${t}" -p0 "${c}" --weight-seed "${WEIGHT_SEED}" --results-dir "${RESULTS_DIR}" -algo "${a}"
+                    echo ">>> Running on: ${file} (threads=${t}, chunk_size=${c}, p1=${s}), algo=${a}, run=${run}/${N_RUNS}"
+                    "${BIN}" "${file}" -n "${t}" -p0 "${c}" -p1sched "${s%%:*}" -p1chunk "${s##*:}" --weight-seed "${WEIGHT_SEED}" --results-dir "${RESULTS_DIR}" -algo "${a}"
                 done
             done 
+          done
         done
     done
 done

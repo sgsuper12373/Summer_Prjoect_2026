@@ -188,29 +188,33 @@ long long boruvka_omp( ECLgraph G, int chunk_size) {
 
         // PHASE_1:  find the cheapest outgoing edge per component
         /*
-            Why Guided suites here best? 
-                the work for each thread will be irregualr. based on graph propery we will 
-                have the different degree of nodes. some nodes may have higher degree and some might low
-                so this is irregular type of work. hence dynamic would work here best I guess because
-                dynmic will get more scheduling overhead due to scheduling 
+            The work per vertex is irregular (it depends on the degree), so the
+            schedule matters here.  schedule(runtime) takes the schedule set
+            with -p1sched (default dynamic,256): guided hands out large chunks
+            first, so on skewed graphs one thread gets stuck with the
+            high-degree vertices while the others wait.
         */
         start = high_resolution_clock::now();
-        #pragma omp parallel for schedule(guided)
+        #pragma omp parallel for schedule(runtime)
         for( int u = 0 ; u < G.nodes; u++ ){
             if( !active[u] ) continue;
 
             int ult_u = comp[u];
             bool has_outgoing = false;
+
+            // Every edge of u updates the same cheapest[ult_u], so keep the
+            // minimum locally and do one atomic per vertex instead of per edge.
+            unsigned long long best = INF;
             for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
                 int v = G.nlist[i];
 
                 if( ult_u == comp[v] ) continue; // same comp, skip
                 has_outgoing = true;
 
-                unsigned long long key = edgeKey(G.eweight[i], i);
-                atomicMinU64(&cheapest[ult_u], key);
+                best = min(best, edgeKey(G.eweight[i], i));
             }
-            if( !has_outgoing ) active[u] = 0;
+            if( has_outgoing ) atomicMinU64(&cheapest[ult_u], best);
+            else active[u] = 0;
         }
         end = high_resolution_clock::now(); 
         phase_timer.phase1 += duration<double>(end - start).count();
@@ -257,7 +261,6 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
     int prev_comps = INT_MAX; 
     int curr_comps = G.nodes; 
 
-    // vector<int> comp(G.nodes);  // we don't need to do the G.nodes as we can directly get it for dsu.find(u) in O(1)
     const unsigned long long INF = ~0ULL;
     // PHASE_0 is gone: cheapest is reset once here, and after that every
     // entry is set back to INF by phase 2 right after it is consumed.
@@ -273,8 +276,9 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
         phase_timer.iterations++;
 
         // PHASE_1 find the cheapest outgoing edge from each component
+        // schedule(runtime): set with -p1sched, see boruvka_omp phase 1.
         auto start = high_resolution_clock::now();
-        #pragma omp parallel for schedule(guided)
+        #pragma omp parallel for schedule(runtime)
         for( int u = 0 ; u < G.nodes; u++ ){
             if( !active[u] ) continue;
 
@@ -283,6 +287,10 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
             // so find it once instead of recomputing it for every edge.
             const int comp_u = dsu.G_find(u);
             bool has_outgoing = false;
+
+            // u's side always updates the same cheapest[comp_u], so keep its
+            // minimum locally and do one atomic per vertex for it.
+            unsigned long long best_u = INF;
 
             for( int i = G.nindex[u]; i < G.nindex[u+1]; i++ ){
                 int v = G.nlist[i]; 
@@ -300,11 +308,12 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
                 // Store the opposite endpoint directly.  One adjacency entry
                 // cannot be reused as the candidate for both components,
                 // because G.nlist[i] is the destination only for u's side.
-                atomicMinU64(&cheapest[comp_u], edgeTargetKey(G.eweight[i], v));
+                best_u = min(best_u, edgeTargetKey(G.eweight[i], v));
                 atomicMinU64(&cheapest[comp_v], edgeTargetKey(G.eweight[i], u));
             }
 
-            if( !has_outgoing ) active[u] = 0;
+            if( has_outgoing ) atomicMinU64(&cheapest[comp_u], best_u);
+            else active[u] = 0;
         }
         auto end = high_resolution_clock::now();
         phase_timer.phase1 += duration<double>(end-start).count();
@@ -342,7 +351,6 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
         // PHASE_3 flatten the tree after unino operations
         start = high_resolution_clock::now(); 
-        // dsu.compress_tree_v2(); 
         dsu.compress_tree_v1(); 
         end = high_resolution_clock::now(); 
         phase_timer.phase3 += duration<double>(end-start).count();
@@ -354,11 +362,13 @@ long long  Boruvka_omp_intermediate( ECLgraph G, int chunk_size){
 
 
 void print_usage() {
-    cerr << "USAGE: ./ecl_boruvkas <filename> -algo <name> [-n <threads>] [-p0 <chunk_size>] [--weight-seed <seed>] [--results-dir <path>] [--ref-weights <path>]\n";
+    cerr << "USAGE: ./ecl_boruvkas <filename> -algo <name> [-n <threads>] [-p0 <chunk_size>] [-p1sched <static|dynamic|guided>] [-p1chunk <n>] [--weight-seed <seed>] [--results-dir <path>] [--ref-weights <path>]\n";
     cerr << "Algorithms (-algo): serial_full, serial_half, serial_split, omp_half, omp_intermediate\n";
     cerr << "Runs the selected algorithm once and appends results to <results_dir>/<testfile>_result.csv\n";
     cerr << "(results_dir defaults to 'Results/<YYYYMMDD_HHMMSS>').\n";
     cerr << "If -p0 is not provided, reads from CHUNK_SIZE environment variable.\n";
+    cerr << "-p1sched/-p1chunk set the phase 1 schedule of the omp algorithms (default dynamic, 256;\n";
+    cerr << "-p1chunk 0 uses the OpenMP default chunk for that schedule).\n";
     cerr << "Reference MST weights are cached in --ref-weights (default 'Results/reference_weights.csv');\n";
     cerr << "serial_full is only run for graphs missing from that file.\n";
 }
@@ -374,26 +384,27 @@ string timestamped_results_dir() {
 }
 
 /**
- * @brief Add the validation column to an existing results file when needed.
+ * @brief Append a column to an existing results file when it is missing.
  *
- * Older result files do not contain results_matched.  Existing rows were not
- * validated by this version, so they receive 0 when the file is migrated.
+ * Older result files lack the newer columns.  Their existing rows receive
+ * default_value, so new rows can be appended without misaligning the file.
+ * Columns must be ensured in the order they appear in the header.
  */
-void ensure_results_matched_column(const fs::path& csv_file) {
+void ensure_csv_column(const fs::path& csv_file, const string& column, const string& default_value) {
     if (!fs::exists(csv_file) || fs::file_size(csv_file) == 0) return;
 
     ifstream input(csv_file);
     string header;
     if (!getline(input, header)) return;
 
-    if (header.find("results_matched") != string::npos) return;
+    if (header.find(column) != string::npos) return;
 
     vector<string> lines;
-    lines.push_back(header + ",results_matched");
+    lines.push_back(header + "," + column);
 
     string line;
     while (getline(input, line)) {
-        if (!line.empty()) line += ",0";
+        if (!line.empty()) line += "," + default_value;
         lines.push_back(line);
     }
     input.close();
@@ -452,10 +463,6 @@ void assign_random_weights(ECLgraph& G, int max_weight, uint32_t seed) {
             }
         }
     }
-
-    // for (int i = 0; i < G.edges; ++i) {
-    //     if (G.eweight[i] == 0) G.eweight[i] = distribution(generator);
-    // }
 }
 
 /**
@@ -516,6 +523,8 @@ int main(int argc, char* argv[]) {
 
     int num_threads = omp_get_max_threads();
     int chunk_size = 16;
+    string p1_sched = "dynamic";
+    int p1_chunk = 256;
     uint32_t weight_seed = 20260907U;
     constexpr int MAX_WEIGHT = 50;
 
@@ -534,6 +543,10 @@ int main(int argc, char* argv[]) {
             num_threads = atoi(argv[++i]);
         } else if (arg == "-p0" && i + 1 < argc) {
             chunk_size = atoi(argv[++i]);
+        } else if (arg == "-p1sched" && i + 1 < argc) {
+            p1_sched = argv[++i];
+        } else if (arg == "-p1chunk" && i + 1 < argc) {
+            p1_chunk = atoi(argv[++i]);
         } else if (arg == "--weight-seed" && i + 1 < argc) {
             try {
                 const unsigned long parsed_seed = stoul(argv[++i]);
@@ -573,7 +586,20 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Phase 1 loops use schedule(runtime), which reads this setting.
+    static const map<string, omp_sched_t> sched_kinds = {
+        {"static", omp_sched_static}, {"dynamic", omp_sched_dynamic}, {"guided", omp_sched_guided}};
+    if (sched_kinds.find(p1_sched) == sched_kinds.end()) {
+        cerr << "ERROR: -p1sched must be static, dynamic or guided.\n";
+        return 1;
+    }
+    if (p1_chunk < 0) {
+        cerr << "ERROR: -p1chunk must be zero or positive.\n";
+        return 1;
+    }
+
     omp_set_num_threads(num_threads);
+    omp_set_schedule(sched_kinds.at(p1_sched), p1_chunk);
 
     
     //recored the time taken to load the graph
@@ -602,6 +628,7 @@ int main(int argc, char* argv[]) {
     cout << "Total Nodes: " << G.nodes << "\nTotal Edges: " << G.edges << "\n";
     cout << "OMP threads: " << num_threads << "\n";
     cout << "Chunk size: " << chunk_size << "\n";
+    cout << "Phase 1 schedule: " << p1_sched << ", " << p1_chunk << "\n";
     cout << "Algorithm: " << algo_name << "\n";
     if (generated_weights) {
         cout << "Generated weight seed: " << weight_seed << "\n";
@@ -663,7 +690,11 @@ int main(int argc, char* argv[]) {
     }
     cout << "\n";
 
-    ensure_results_matched_column(csv_file);
+    // Rows written before these columns existed used guided with the
+    // default chunk in phase 1, which is recorded as 0.
+    ensure_csv_column(csv_file, "results_matched", "0");
+    ensure_csv_column(csv_file, "phase1_schedule", "guided");
+    ensure_csv_column(csv_file, "phase1_chunk", "0");
 
     bool write_header = true;
     if (fs::exists(csv_file)) write_header = (fs::file_size(csv_file) == 0);
@@ -675,7 +706,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     if (write_header) {
-        csv << "graph,algorithm,threads,chunk_size_p0,weight,weight_seed,graph_load_time, total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s,results_matched\n";
+        csv << "graph,algorithm,threads,chunk_size_p0,weight,weight_seed,graph_load_time, total_time_s,iterations,phase0_s,phase1_s,phase2_s,phase3_s,results_matched,phase1_schedule,phase1_chunk\n";
     }
     csv << fixed << setprecision(9);
     csv << stem << "," << algo_name << "," << num_threads << "," << chunk_size << "," << weight << ","
@@ -684,7 +715,8 @@ int main(int argc, char* argv[]) {
         << total_time << "," << phase_timer.iterations << "," 
         << phase_timer.phase0 << "," << phase_timer.phase1 << "," 
         << phase_timer.phase2 << "," << phase_timer.phase3 << ","
-        << (results_matched ? 1 : 0) << "\n";
+        << (results_matched ? 1 : 0) << ","
+        << p1_sched << "," << p1_chunk << "\n";
     csv.close();
 
     cout << "--------------------------------------------------\n";

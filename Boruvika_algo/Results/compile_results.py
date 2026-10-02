@@ -39,9 +39,14 @@ def compile_results(input_dir):
                 )
                 continue
             
+            # Newer files also record the phase 1 schedule; keep those runs apart.
+            file_grouping = grouping_columns + [
+                col for col in ['phase1_schedule', 'phase1_chunk'] if col in df.columns
+            ]
+
             # Group by configuration and calculate the median
             # numeric_only=True ensures we don't try to calculate medians on string columns (like graph names)
-            compiled_df = df.groupby(grouping_columns).median(numeric_only=True).reset_index()
+            compiled_df = df.groupby(file_grouping).median(numeric_only=True).reset_index()
             
             # If the 'graph' column was dropped because it's a string, let's add it back 
             # assuming all rows in a single file belong to the same graph
