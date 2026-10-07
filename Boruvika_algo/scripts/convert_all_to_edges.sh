@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Converts every .egr graph in tests/ to BoruvkaUMinho's .edges format,
-# writing output into tests_edges/ (created if missing).
+# Converts every .egr graph in BTP_2026/Graphs/egr_graphs/ to BoruvkaUMinho's .edges format,
+# writing output into BTP_2026/Graphs/edges_UMinho/ (created if missing).
 
 set -euo pipefail
 
@@ -8,8 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 CONVERTER="$ROOT_DIR/src/egr2edges"
-INPUT_DIR="$ROOT_DIR/tests"
-OUTPUT_DIR="$ROOT_DIR/tests_edges"
+GRAPHS_DIR="$(cd "$ROOT_DIR/../.." && pwd)/Graphs"
+INPUT_DIR="$GRAPHS_DIR/egr_graphs"
+OUTPUT_DIR="$GRAPHS_DIR/edges_UMinho"
 
 if [[ ! -x "$CONVERTER" ]]; then
     echo "ERROR: converter not found or not executable at $CONVERTER" >&2

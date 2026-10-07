@@ -1,16 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-# Runs the Boruvka benchmark on every .egr file in the tests/ folder.
-# Each batch writes its timings to Results/<timestamp>/<testfile>_result.csv.
+# Runs the Boruvka benchmark on every .egr file in BTP_2026/Graphs/egr_graphs.
+# Each batch writes its timings to
+# BTP_2026/Boruvka_Comparision/Comparision/raw/mine/<timestamp>/<testfile>_result.csv.
 
 # Change to the root project directory so paths work everywhere
 cd "$(dirname "$0")/.."
 
 BIN=./a.out
 SRC=src/ECL_boruvkas.cpp
-TESTS_DIR=./tests
-RESULTS_DIR="Results/$(date +%Y%m%d_%H%M%S)"
+TESTS_DIR=../../Graphs/egr_graphs
+RESULTS_DIR="../../Boruvka_Comparision/Comparision/raw/mine/$(date +%Y%m%d_%H%M%S)"
 
 # Compile the benchmark (OpenMP + C++17 for std::filesystem).
 echo "Compiling ${SRC}..."
