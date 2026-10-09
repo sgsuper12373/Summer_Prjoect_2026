@@ -1,0 +1,460 @@
+%======================================================================
+%  BTP Midterm Report (short format, modelled on the HDL Simulator report)
+%  Search for "TODO" to find everything that still needs filling.
+%======================================================================
+\documentclass[11pt,a4paper]{article}
+
+%---------------------------- Packages --------------------------------
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
+
+\graphicspath{{figures/}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6em}
+\setlength{\emergencystretch}{2em}
+\setlist{itemsep=1pt,topsep=2pt}
+
+
+
+% Image placeholder box. Replace with \includegraphics once the image exists.
+%   \imgplaceholder{width}{height}{label text}
+\newcommand{\imgplaceholder}[3]{%
+  \fbox{\parbox[c][#2][c]{\dimexpr#1-2\fboxsep-2\fboxrule\relax}{\centering\color{gray}\textit{Image placeholder}\\[2pt]\small #3}}}
+
+% Code listing style (plain monospace, like the sample report)
+\lstset{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  tabsize=2,
+  language=C++
+}
+
+% Title only, no author/date line (as in the sample)
+\title{\vspace{-1cm}Parallelization of Minimum Spanning Tree Algorithm}
+\date{}
+
+%======================================================================
+\begin{document}
+\maketitle
+\vspace{-1.5cm}
+
+%----------------------------------------------------------------------
+\section*{Mentor}
+Dr. Anju M A (\href{mailto:anju@iitpkd.ac.in}{anju@iitpkd.ac.in})
+
+\section*{Team Members}
+\begin{itemize}
+  \item Sumit Garad (\href{mailto:112301032@smail.iitpkd.ac.in}{112301032})
+\end{itemize}
+
+%----------------------------------------------------------------------
+\section*{Introduction}
+A spanning tree of a connected, undirected graph $G=(V,E)$ is a subset of the edges that connects every vertex without forming a cycle, so it always has $|V|-1$ edges. For a weighted graph, a minimum spanning tree (MST) is the spanning tree with the smallest total edge weight. When the graph has several connected components, the result is a minimum spanning forest (MSF), made of one MST per component. In this report, MST refers to both.
+
+MSTs serve as building blocks in network design (for example, the cheapest layout of a power or communication grid), network analysis, VLSI routing and chip design, clustering, and route planning. Several of these applications compute MSTs repeatedly on large graphs, so the speed of the MST computation step matters~\cite{fallin2023eclmst}.
+
+The goal of this project is a fast parallel implementation of Bor\r{u}vka's MST algorithm, built in stages: a sequential CPU version, an OpenMP multicore version, and finally a CUDA GPU version. The sequential CPU version also serves as correctness baseline for the parallel versions. This midterm report covers the sequential and OpenMP stages.
+
+%----------------------------------------------------------------------
+\section*{Background}
+There are three classical algorithms for finding an MST in a given undirected graph $G=(V,E)$. Each of them follows a greedy approach and runs in $O(|E|\log|V|)$ time, when appropriate data structures are used.
+
+\subsection*{Kruskal's Algorithm}
+The key steps in this algorithm are as follows: Sort the edges by weight, scan them from lightest to heaviest, and add an edge to the MST if it does not form a cycle with the edges already added to the MST. Cycle detection typically uses a disjoint-set (union-find) structure.
+
+\subsection*{Prim's Algorithm}
+This algorithm builds MSTs by growing a single tree from an arbitrary start vertex, repeatedly adding the lightest edge that connects the tree to a vertex outside it. Typical implementations employ a priority queue data structure.
+
+\subsection*{Bor\r{u}vka's Algorithm}
+It starts with every vertex as its own component. In each round, every component picks its lightest outgoing edge, and all of these edges are added at once, merging components. Every component with an outgoing edge merges with at least one other component, so the number of components at least halves in every round and there are at most $\lceil\log_2|V|\rceil$ rounds.
+
+Of these three algorithms, Kruskal's and Prim's are inherently sequential. In Kruskal's algorithm, the sorting step can be parallelized, but building the MST from the sorted edges remains sequential, because whether an edge forms a cycle depends on all the lighter edges processed before it. Prim's algorithm grows a single tree one edge at a time, and each step depends on the tree built so far. Bor\r{u}vka's algorithm exhibits more parallelism by nature: within a round, every component finds its cheapest outgoing edge independently of the others, and all selected edges can be added together. To keep track of the components and to avoid cycles, we use the disjoint-set (union-find) data structure.
+
+\subsection*{Graph Representation used}
+Graphs are stored in compressed sparse row (CSR) format using the ECLgraph binary format (\texttt{.egr}) from the ECL (Efficient Computing Laboratory) research group at Texas State University. The \texttt{nindex} array holds the offset of each vertex's adjacency list, \texttt{nlist} holds the neighbour IDs of all the vertices, and \texttt{eweight} holds the edge weights. Each undirected edge is stored twice, once from each endpoint, so \texttt{edges} counts directed entries. The structure is:
+
+\begin{lstlisting}
+typedef struct {
+  int  nodes;    // number of vertices |V|
+  int  edges;    // number of directed edge entries (2|E|)
+  int* nindex;   // size = |V|+1; adjacency of u is nlist[nindex[u] .. nindex[u+1]-1]
+  int* nlist;    // size = |E|; stores neighbour IDs
+  int* eweight;  // size = |E|; stores edge weights
+} ECLgraph;
+\end{lstlisting}
+
+For unweighted inputs, random weights between 1 and 50 are generated with a fixed seed, and both copies of an undirected edge receive the same weight, so every implementation solves the same instance.
+
+\subsection*{Disjoint Set Variants}
+Bor\r{u}vka's algorithm needs to know which component each vertex belongs to and needs to merge components. A disjoint-set union (DSU) structure provides both: \texttt{find(v)} returns the representative (root) of the set containing $v$, and \texttt{union(a, b)} links the two sets to which $a$ and $b$ belong. The cost of \texttt{find} depends on how deep the parent trees become, so the DSU variants differ in how they shorten the path during \texttt{find}:
+
+\begin{itemize}
+  \item \textbf{Full path compression} -- after \texttt{find}, every node on the path points directly to the root, so later queries on these nodes take one step.
+  \item \textbf{Path splitting} -- during \texttt{find}, every node on the path is made to point to its grandparent, also in a single pass.
+  \item \textbf{Path halving} -- during \texttt{find}, every other node on the path is made to point to its grandparent. It needs only one pass and writes half as many parent pointers as path splitting.
+  
+\end{itemize}
+
+Linking root $a$ under root $b$ or $b$ under $a$ gives the same set but trees of different depth, so union heuristics such as union by size or by rank are used to keep the trees shallow. The sequential version uses union by size. The parallel versions drop the size heuristic, because keeping a separate size array consistent across threads would need extra atomic updates. Instead, a fixed ordering of the two root IDs decides which root is linked under the other. A fixed ordering also prevents two threads from linking two roots under each other at the same time.
+
+%----------------------------------------------------------------------
+\section*{Work done}
+
+We implemented three versions of Bor\r{u}vka's algorithm: a sequential version, a parallel OpenMP version (Bor\r{u}vka-omp), and an optimized parallel version (Bor\r{u}vka-intermediate).
+
+\subsection*{Sequential Bor\r{u}vka}
+The sequential implementation follows the textbook rounds (Algorithm~\ref{alg:sequential}). For each vertex, it scans the adjacency list, finds the lightest edge whose other endpoint lies in a different component, and records its CSR index at the component's representative. It then unites each component with the component on the other end of its recorded edge and adds the edge weight to the MST weight. The loop ends when a round performs no union, that is, when no component has an outgoing edge. The DSU type is a template parameter, so the same loop runs with each variant (full compression, halving, splitting).
+
+Union is called with the component representative $c$ instead of the source vertex of the edge. This is correct since both belong to the same set. Since edges are scanned in increasing order of CSR indexes and replaced only on a strictly smaller weight, ties between equal weights are broken by the smallest edge index.
+
+% Algo is taking too much space 
+% \begin{algorithm}[H]
+%   \caption{Sequential Bor\r{u}vka}
+%   \label{alg:sequential}
+%   \begin{algorithmic}[1]
+%     \Require Weighted graph $G$ in CSR format ($nindex$, $nlist$, $eweight$), $n = |V|$
+%     \Ensure Total weight $W$ of the minimum spanning forest
+%     \State $W \gets 0$
+%     \State $currComps \gets n$, \; $prevComps \gets \infty$
+%     \State initialize a DSU with each vertex in its own set
+%     \While{$prevComps \ne currComps$}
+%       \State $prevComps \gets currComps$
+%       \Statex \Comment{Phase 0: flatten component ids and reset}
+%       \For{$u \gets 0$ \textbf{to} $n-1$}
+%         \State $comp[u] \gets \text{DSU.Find}(u)$
+%         \State $cheapest[u] \gets \text{INF}$
+%       \EndFor
+%       \Statex \Comment{Phase 1: cheapest outgoing edge (CSR index) per component}
+%       \For{$u \gets 0$ \textbf{to} $n-1$}
+%         \State $c \gets comp[u]$
+%         \For{$i \gets nindex[u]$ \textbf{to} $nindex[u+1]-1$}
+%           \State $v \gets nlist[i]$
+%           \If{$comp[v] \ne c$ \textbf{and} ($cheapest[c] = \text{INF}$ \textbf{or} $eweight[i] < eweight[cheapest[c]]$)}
+%             \State $cheapest[c] \gets i$
+%           \EndIf
+%         \EndFor
+%       \EndFor
+%       \Statex \Comment{Phase 2: merge each component along its cheapest edge}
+%       \For{$c \gets 0$ \textbf{to} $n-1$}
+%         \If{$cheapest[c] \ne \text{INF}$}
+%           \State $i \gets cheapest[c]$, \; $v \gets nlist[i]$
+%           \If{$\text{DSU.Union}(c, v)$}
+%             \State $W \gets W + eweight[i]$
+%             \State $currComps \gets currComps - 1$
+%           \EndIf
+%         \EndIf
+%       \EndFor
+%     \EndWhile
+%     \State \Return $W$
+%   \end{algorithmic}
+% \end{algorithm}
+
+\subsection*{Bor\r{u}vka-omp}
+Bor\r{u}vka-omp parallelizes each phase of the sequential version with \texttt{\#pragma omp parallel for} constructs. The implicit barrier at the end of each parallel loop separates the phases. The DSU type is again a template parameter. We use \texttt{DSU\_half\_omp}, a thread-safe DSU with path halving, because it performed best among the variants we tested: path halving writes fewer parent pointers per \texttt{find}, which reduces contention due to atomic operations on the shared parent array.
+
+\begin{itemize}
+  \item \textbf{Phase 0 (flatten and reset)} -- each vertex stores its root in \texttt{comp[u]} and resets \texttt{cheapest[u]}. This loop uses static scheduling with a fixed chunk size.
+  \item \textbf{Phase 1 (cheapest edge)} -- each thread scans the adjacency lists of its vertices. A vertex keeps the minimum over its own edges in a local variable and performs one atomic minimum on \texttt{cheapest[comp[u]]} per vertex instead of one per edge. A vertex whose neighbours all lie in its own component is marked inactive and skipped in later rounds, since components only ever merge. The work per vertex depends on its degree.
+  \item \textbf{Phase 2 (merge)} -- each component with a selected edge is united with the component on the other end. The MST weight and the number of merges are accumulated with OpenMP reductions instead of atomic updates on shared counters. The loop exits as soon as one component remains or a round performs no merge.
+\end{itemize}
+
+\subsection*{Bor\r{u}vka-intermediate}
+Bor\r{u}vka-intermediate builds on Bor\r{u}vka-omp, uses \texttt{DSU\_intermediate\_omp}, and makes three changes:
+
+\begin{itemize}
+  \item \textbf{No separate reset phase} -- \texttt{cheapest} is initialized once before the first round. After that, phase 2 resets each entry to INF right after reading it.
+  \item \textbf{Each undirected edge processed once} -- only the copy with $u < v$ is scanned, and the edge is offered to both components: $u$'s side keeps a local minimum, and $v$'s side is updated directly with an atomic minimum. A CSR index identifies the target vertex only for $u$'s side, so the key stores the opposite endpoint instead of the edge index.
+  \item \textbf{Explicit compression phase} -- after the unions of a round, \texttt{compress\_tree()} points every vertex directly at its root. As a result, \texttt{G\_find} is a single $O(1)$ parent lookup during phase 1 of the next round, and no separate \texttt{comp} array is needed. The phase is skipped after the final round.
+\end{itemize}
+
+The parent array is modified only during the union and compression phases, and each phase ends with an implicit barrier. Therefore, the parent array does not change during minimum edge selection, and \texttt{find} and the same-component check need no atomic reads there. OpenMP tasks were tried for \texttt{compress\_tree()} and rejected: recursion depth is a risk on chain-like graphs, shared path prefixes are walked repeatedly, and task creation adds overhead when the iteration space is already known.
+
+\subsection*{Lock-free Minimum Edge Selection}
+In phase 1, many threads may try to lower the same \texttt{cheapest[c]} slot. Instead of using locks, each candidate edge is packed into one 64-bit key: the upper 32 bits hold the weight and the lower 32 bits hold the edge index (the target vertex in Bor\r{u}vka-intermediate). The sign bit of the weight is flipped so that signed weights keep their order when compared as unsigned integers. Comparing two keys therefore compares the weights first and breaks ties by the lower 32 bits, which makes the selected edge deterministic.
+
+The key is lowered with a compare-and-swap (CAS) retry loop that retries only while the new key is still smaller than the stored one, so most calls finish after a single load. Relaxed memory ordering is sufficient because the keys are read only after the implicit barrier at the end of the loop. Earlier versions that used \texttt{omp critical} sections or locks were slower than the sequential code because of contention.
+
+\begin{lstlisting}
+static inline unsigned long long edgeKey(int weight, int edge_index) {
+  const unsigned int w = static_cast<unsigned int>(weight) ^ 0x80000000u;
+  return (static_cast<unsigned long long>(w) << 32) |
+         static_cast<unsigned int>(edge_index);
+}
+
+static inline void atomicMinU64(unsigned long long* addr, unsigned long long val) {
+  unsigned long long old = __atomic_load_n(addr, __ATOMIC_RELAXED);
+  while (val < old &&
+         !__atomic_compare_exchange_n(addr, &old, val, false,
+                                      __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+    // on failure, old is refreshed and the loop re-checks val < old
+  }
+}
+\end{lstlisting}
+
+\subsection*{Correctness}
+Two components can select the same edge: component $A$ picks the edge to $B$, and $B$ picks the reverse copy of that edge. \texttt{G\_union} re-resolves both roots right before linking and returns false if they already belong to the same set. The second union is therefore rejected, and the edge weight and the merge are counted only once. In general, any selected edge whose endpoints were already connected earlier in the same round is rejected, so no cycle is formed.
+
+Every run is validated by comparing its MST weight with that of the sequential version with full path compression. The reference weight is cached per graph and weight seed, and the outcome is recorded in the results file.
+
+\section*{Evaluation setup}
+
+\subsection*{Hardware Configuration}
+All results in this report were measured on a laptop (ASUS VivoBook) with an Intel Core i5-12500H (12th Gen, H-series) hybrid CPU. It has 12 physical cores: 4 performance cores (P-cores) with hyperthreading and 8 efficiency cores (E-cores) without hyperthreading, giving 16 logical CPUs in total. The E-cores are grouped into two clusters of four, each sharing a 2 MB L2 cache, and all cores share an 18 MB L3 cache. The laptop was plugged into AC power with sleep disabled during all runs.
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{System configuration.}
+  \label{tab:system}
+  \begin{tabular}{ll}
+    \toprule
+    \textbf{Component} & \textbf{Details} \\
+    \midrule
+    CPU       & Intel Core i5-12500H, 4 P-cores (8 threads) + 8 E-cores (8 threads) \\
+    Cache     & 32 KB L1d per E-core, 2 MB L2 per 4-core E-core cluster, 18 MB shared L3 \\
+    Memory    & 16 GB \\
+    OS        & Fedora 44, kernel 7.2.4-200.fc44.x86\_64 \\
+    Compiler  & g++ (GCC) 16.2.1 , \texttt{-O3 -fopenmp -std=c++17} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{Evaluation Methodology}
+All implementations, including the baselines, run only on the 8 E-cores, pinned with \texttt{taskset -c 8-15}, so all code runs on identical cores. Each experiment is repeated 9 times and the median runtime is reported. The measured time covers only the MST computation and excludes reading the graph. For unweighted inputs, random weights are assigned with a fixed seed so that every code solves the same instance. Each result is verified against the sequential version, and the verification time is not included in the reported runtime.
+
+\subsection*{Performance Metric}
+We use \textbf{throughput} as the performance metric, defined as
+\[
+  \text{Throughput} = \frac{|E_{\text{CSR}}|}{t},
+\]
+where $|E_{\text{CSR}}|$ is the number of directed edge entries in the CSR representation (each undirected edge counted twice) of the input graph and $t$ is the median runtime of the MST computation over 9 runs. Throughput is reported in millions of edges per second (Medges/s), and higher is better. We use this metric for the following reasons:
+\begin{itemize}
+  \item \textbf{Comparable across inputs} -- the input graphs range from about 0.4 million to over 100 million edges, so their raw runtimes differ by orders of magnitude. Dividing by the number of edges normalizes for graph size, so all inputs can be compared and shown on the same chart.
+  \item \textbf{Comparable across codes} -- every implementation processes the same graph with the same edge weights, so a higher throughput on the same input directly means a faster code.
+  \item \textbf{Consistent with prior work} -- the same metric, with edges counted the same way, is used by ECL-MST~\cite{fallin2023eclmst}, which lets our numbers be related to published results.
+\end{itemize}
+
+We report the median of 9 runs because it is not affected by occasional slow runs caused by operating-system activity. To summarize results across inputs, we use the geometric mean, because throughput values vary widely between graphs and an arithmetic mean would be dominated by the inputs with the highest throughput.
+
+\subsection*{Baselines}
+We compare against two parallel CPU codes from the ECL-MST evaluation~\cite{fallin2023eclmst}. Both run unmodified, on the same E-cores and inputs as our code.
+\begin{itemize}
+  \item \textbf{UMinho CPU}~\cite{mariano2015boruvka} -- a generic parallel Borůvka that contracts components into supervertices and builds a new, smaller graph in each round. Built with its OpenMP backend inside an Ubuntu 20.04 container (it needs an older TBB). It reports the MST weight with each edge counted in both directions, so its value is exactly twice ours. 
+
+  \item \textbf{Lonestar CPU (Galois)}~\cite{galois} -- a parallel Borůvka that iterates over components, finds the lightest edge of each component in parallel, and merges components lock-free using a disjoint set. Built inside a container.
+  
+\end{itemize}
+
+\subsection*{Input Graphs}
+We use the 16 input graphs listed in Table~\ref{tab:graphs}, all taken from the ECL-MST benchmark set~\cite{fallin2023eclmst}. They cover a range of structures: grids, road maps and meshes with low, nearly uniform degree, as well as social, web and citation networks and synthetic RMAT graphs with skewed degree distributions. All graphs are undirected. \textbf{Edges} counts directed CSR entries, so each undirected edge is counted twice. \textbf{CCs} is the number of connected components, and \textbf{d-avg} and \textbf{d-max} are the average and maximum vertex degree. Graphs marked with * have no edge weights of their own and receive random weights from 1 to 50 with a fixed seed.
+
+\begin{table}[H]
+  \centering
+  \small
+  \caption{Input graphs (*: random weights generated).}
+  \label{tab:graphs}
+  \begin{tabular}{lrrlrrr}
+    \toprule
+    \textbf{Graph Name} & \textbf{Edges} & \textbf{Vertices} & \textbf{Type} & \textbf{CCs} & \textbf{d-avg} & \textbf{d-max} \\
+    \midrule
+    2d-2e20.sym                  &   4,190,208 &  1,048,576 & grid             &       1 &  4.0 &      4 \\
+    amazon0601$^\ast$         &   4,886,816 &    403,394 & co-purchases     &       7 & 12.1 &  2,752 \\
+    as-skitter$^\ast$         &  22,190,596 &  1,696,415 & Internet topo.   &     756 & 13.1 & 35,455 \\
+    citationCiteseer$^\ast$   &   2,313,294 &    268,495 & publication cit. &       1 &  8.6 &  1,318 \\
+    cit-Patents$^\ast$        &  33,037,894 &  3,774,768 & patent cit.      &   3,627 &  8.8 &    793 \\
+    coPapersDBLP$^\ast$       &  30,491,458 &    540,486 & publication cit. &       1 & 56.4 &  3,299 \\
+    delaunay\_n24$^\ast$      & 100,663,202 & 16,777,216 & triangulation    &       1 &  6.0 &     26 \\
+    europe\_osm$^\ast$        & 108,109,320 & 50,912,018 & road map         &       1 &  2.1 &     13 \\
+    in-2004$^\ast$            &  27,182,946 &  1,382,908 & web links        &     134 & 19.7 & 21,869 \\
+    internet                     &     387,240 &    124,651 & Internet topo.   &       1 &  3.1 &    151 \\
+    r4-2e23.sym                  &  67,108,846 &  8,388,608 & random           &       1 &  8.0 &     26 \\
+    rmat16.sym                   &     967,866 &     65,536 & RMAT             &   3,900 & 14.8 &    569 \\
+    rmat22.sym                   &  65,660,814 &  4,194,304 & RMAT             & 428,640 & 15.7 &  3,687 \\
+    soc-LiveJournal1$^\ast$   &  85,702,474 &  4,847,571 & community        &   1,876 & 17.7 & 20,333 \\
+    USA-road-d.NY                &     730,100 &    264,346 & road map         &       1 &  2.8 &      8 \\
+    USA-road-d.USA               &  57,708,624 & 23,947,347 & road map         &       1 &  2.4 &      9 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+
+%----------------------------------------------------------------------
+\section*{Results}
+All parallel results use 8 threads on the E-cores unless stated otherwise, and our parallel codes use a phase-0 chunk size of 20. The Serial column is the sequential version with path halving.
+
+\subsection*{Runtime}
+Table~\ref{tab:runtime} lists the median MST computation time of our implementations and the baselines. It is the raw data from which the throughputs in the following subsections are computed.
+ 
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \caption{Median runtime in seconds per input (8 threads for parallel codes), with geometric mean. Best value per row in bold.}
+  \label{tab:runtime}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    \textbf{Graph} & \textbf{Serial} & \textbf{omp} & \textbf{Intermediate} & \textbf{UMinho} & \textbf{Lonestar} \\
+    \midrule
+    % runtime table (Serial = serial_half)
+    2d-2e20.sym             & 0.3756 & 0.1032 & \textbf{0.0766} & 0.0894 & 0.1790 \\
+    amazon0601              & 0.1705 & 0.0352 & \textbf{0.0326} & 0.1069 & 0.0600 \\
+    as-skitter              & 0.4724 & 0.1013 & \textbf{0.0915} & 0.3235 & 0.2430 \\
+    citationCiteseer        & 0.0884 & \textbf{0.0189} & 0.0192 & 0.0576 & 0.0300 \\
+    cit-Patents             & 2.6323 & 0.6130 & \textbf{0.5266} & 1.3577 & 1.3950 \\
+    coPapersDBLP            & 0.4165 & 0.0694 & \textbf{0.0691} & 0.6162 & 0.1610 \\
+    delaunay\_n24           & 5.7429 & 1.4296 & \textbf{1.1604} & 1.4046 & 2.2860 \\
+    europe\_osm             & 13.0396 & 4.0757 & 2.5610 & \textbf{2.3149} & 3.9950 \\
+    in-2004                 & 0.3897 & 0.0861 & \textbf{0.0760} & 0.1778 & 0.1350 \\
+    internet                & 0.0180 & 0.0072 & 0.0062 & 0.0055 & \textbf{0.0040} \\
+    r4-2e23.sym             & 11.7722 & 2.7074 & \textbf{2.3873} & 5.4238 & 2.9950 \\
+    rmat16.sym              & 0.0253 & 0.0072 & 0.0074 & 0.0394 & \textbf{0.0070} \\
+    rmat22.sym              & 5.2795 & 1.0295 & \textbf{1.0256} & 4.1002 & 2.1740 \\
+    soc-LiveJournal1        & 2.9108 & 0.6290 & \textbf{0.6265} & 2.4895 & 1.4290 \\
+    USA-road-d.NY           & 0.0503 & 0.0169 & 0.0133 & 0.0106 & \textbf{0.0090} \\
+    USA-road-d.USA          & 5.5554 & 1.8233 & 1.2326 & \textbf{0.8691} & 1.3880 \\
+    \midrule
+    \textbf{GeoMean}        & 0.6774 & 0.1684 & \textbf{0.1458} & 0.3153 & 0.2320 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+ 
+ Bor\r{u}vka-intermediate is the fastest code on 10 of the 16 inputs and has the lowest geometric-mean runtime. Its geometric-mean speedup is $4.65\times$ over the serial version, $1.15\times$ over Bor\r{u}vka-omp, $2.16\times$ over UMinho CPU and $1.59\times$ over Lonestar CPU. Bor\r{u}vka-omp is marginally faster on citationCiteseer (0.0189,s vs.\ 0.0192,s). UMinho CPU is the fastest on the two largest road maps, europe\_osm and USA-road-d.USA. Lonestar CPU is the fastest on the three smallest inputs, internet, USA-road-d.NY and rmat16.sym. These inputs take only 4--13,ms, so Lonestar's millisecond timer and its edge sort, which runs outside its timed region, matter a lot there.
+ 
+%----------------------------------------------------------------------
+\subsection*{Throughput}
+Figure~\ref{fig:throughput} shows the throughput of all codes on each input, together with the geometric mean.
+ 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{throughput_8t.png}
+  \caption{Throughput in millions of edges per second (8 threads, log scale), with geometric mean.}
+  \label{fig:throughput}
+\end{figure}
+ 
+Out of the 16 graphs, omp\_intermediate achieves the highest throughput on 10 and omp\_half on 1,
+while Lonestar CPU is the fastest on 3 graphs and UMinho CPU on 2. In one to one comparisons,
+omp\_intermediate beats Lonestar CPU on 13 graphs and UMinho CPU on 12, and omp\_half beats
+Lonestar CPU on 11 graphs and UMinho CPU on 10. Increasing the numberof threads for each of this algoritms results in lower througput values so we are keeping only the througputs reported with 8 threads. 
+
+The four losses of omp\_intermediate against UMinho CPU are on the sparsest inputs: the three
+road networks (USA-road-d.USA, USA-road-d.NY and europe\_osm) and the internet topology graph,
+all with an average degree of at most 3.1. On such graphs the number of vertices is close to the
+number of edges, and the road networks need 9--12 Bor\r{u}vka rounds compared with 5--7 on the
+power-law graphs. Our merge and flatten phases loop over all vertices in every round, so they
+take most of the runtime on these inputs, whereas UMinho CPU contracts the graph after each
+round and its later rounds operate on far fewer vertices.
+
+The three losses against Lonestar CPU (internet, USA-road-d.NY and rmat16.sym) are instead the
+three smallest inputs, each with fewer than one million edges and a runtime of only 6--13\,ms.
+There, fixed costs dominate: our timed region includes the allocation of the DSU and the work
+arrays and several parallel barriers per round,For measuring the time of lonestar we have excluded the init times outputeed by the lonestar runs. On the large road networks omp\_intermediate
+beats Lonestar CPU ($1.56\times$ on europe\_osm), so these losses depend on input size rather than on graph topology. If the DSU and vector initialization times is are not counted then it might improve the performance of our code but they are designed to be accept the DSU datastructure at the runtime using the generics. 
+
+
+%----------------------------------------------------------------------
+
+\subsection*{Scaling}
+Figure~\ref{fig:scaling-intermediate} shows the self-relative speedup $T_1/T_p$ of
+Bor\r{u}vka-intermediate for $p = 1, 2, 4, 8$ threads, where $T_1$ is the runtime of the same
+code on one thread (on one thread it is $1.06\times$ faster than the sequential version).
+Figure~\ref{fig:scaling-half} shows the same for Bor\r{u}vka-omp.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{scaling_lines_omp_intermediate.png}
+  \caption{Self-relative speedup ($T_1/T_p$) of Bor\r{u}vka-intermediate on 1--8 E-cores for all
+           16 inputs, with the geometric mean in bold. The dashed line is ideal linear speedup.}
+  \label{fig:scaling-intermediate}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{scaling_lines_omp_half.png}
+  \caption{Self-relative speedup ($T_1/T_p$) of Bor\r{u}vka-omp on 1--8 E-cores for all
+           16 inputs, with the geometric mean in bold. The dashed line is ideal linear speedup.}
+  \label{fig:scaling-half}
+\end{figure}
+
+The geometric-mean throughput of Bor\r{u}vka-intermediate grows from 21.6\,Medges/s on 1 thread
+to 38.6 on 2, 67.4 on 4 and 95.1 on 8 threads, a speedup of $1.79\times$, $3.12\times$ and
+$4.40\times$. Scaling is good up to 4 threads (78\% parallel efficiency) and flattens after
+that: going from 4 to 8 threads adds only $1.41\times$. Bor\r{u}vka-omp follows the same trend
+at a lower level, reaching $3.81\times$ on 8 threads; for comparison, Lonestar CPU reaches
+$4.28\times$ and UMinho CPU $2.97\times$.
+
+At 8 threads, the best self-speedup is on coPapersDBLP ($6.16\times$) and the worst on the
+sparse inputs: internet ($2.98\times$), USA-road-d.USA ($3.54\times$), USA-road-d.NY
+($3.80\times$) and europe\_osm ($3.81\times$). On these inputs the merge and flatten phases,
+which loop over all vertices in every round, take a large share of the runtime and parallelise
+less well than the edge scan in phase~1.
+ 
+ 
+% %----------------------------------------------------------------------
+\subsection*{Reasoning on Results}
+\begin{itemize}
+    \item \textbf{Path halving}
+        for the parallel boruvka\_omp version  all the benchmarkings are done using the Path halving DSU version. In this version very write to shared parent array is an atomic operation on memory. The Path halving version is chosen because it does the fewest atomic writes and causes the least cache-line traffic between cores. The trees stay shallow after the first rounds anyway, so the weaker compression of path halving costs little.
+        for the boruvka\_omp\_intermediate version we use a diffrent Disjoint set data structure. in this data structure we have readonly find operation which assumes that tree is flattned already and returns the representative in \textit{O(1)} time, we have compress\_tree() function in the Disjoint set data structure which flattens the whole tree. 
+        
+  \item \textbf{Where UMinho CPU is faster.} UMinho CPU contracts the graph after every round: it builds a new, smaller graph that contains only the surviving components and the edges between them. Our code instead keeps the original graph and skips vertices whose neighbours all lie in their own component, 
+  but it still walks an array of size $|V|$ in every round. On the road maps, which have the most vertices per edge and need up to 12 rounds, the shrinking graph lets UMinho CPU do less work in the later rounds, so it is the fastest code on europe\_osm and USA-road-d.USA. On the other inputs, building a new graph every round costs more than it saves, and our code is $2.29\times$ faster on average.
+
+  
+  \item \textbf{Where Lonestar CPU is faster.} Lonestar CPU only wins on the two smallest inputs, which take a few milliseconds. Its time excludes the sort of all edges by weight, which it does during initialization, while our time includes all setup. 
+
+  
+  \item \textbf{Load imbalance in phase 1.} Phase 1 is vertex-centric: one thread scans all edges of a vertex. On graphs with high-degree vertices, a thread that gets a hub vertex scans tens of thousands of edges while the other threads wait at the barrier. Dynamic scheduling hands out the vertices in chunks of 256 and keeps this imbalance small, so high-degree inputs still reach the highest throughputs. However, the extra atomic minimum on the second endpoint in Bor\r{u}vka-intermediate concentrates updates on hub components. This is likely why Bor\r{u}vka-intermediate gains little over Bor\r{u}vka-omp on these inputs: 1\% on coPapersDBLP and 3\% on soc-LiveJournal1, compared with 35--38\% on the large road maps (Table~\ref{tab:runtime}).
+
+\end{itemize}
+
+
+
+
+
+
+%----------------------------------------------------------------------
+\section*{Future Plans}
+\begin{itemize}
+  \item {CUDA implementation based on ECL-MST~\cite{fallin2023eclmst}}
+  \item {Benchmarks on the Madhava HPC cluster}
+  \item {Larger and more varied input set}
+  \item {other plans}
+\end{itemize}
+
+%----------------------------------------------------------------------
+\begin{thebibliography}{9}
+
+\bibitem{fallin2023eclmst}
+A.~Fallin, A.~Gonzalez, J.~Seo, and M.~Burtscher,
+``A High-Performance MST Implementation for GPUs,''
+in \emph{SC '23}, 2023. doi:10.1145/3581784.3607093.
+
+\bibitem{mariano2015boruvka}
+A.~Mariano, A.~Proen\c{c}a, and C.~Da~Silva~Sousa,
+``A Generic and Highly Efficient Parallel Variant of Bor\r{u}vka's Algorithm,''
+in \emph{PDP}, 2015, pp.~610--617.
+
+\bibitem{galois}
+Galois / Lonestar benchmark suite.
+\url{https://github.com/IntelligentSoftwareSystems/Galois}
+
+\end{thebibliography}
+
+\end{document}
+ls
